@@ -1,5 +1,5 @@
 --[[
- TRUONG CODER HD | V4.13.4 - FIX ACC ERROR / FAILSAFE
+ TRUONG CODER HD | V4.14 - GITHUB ONLY CLEAN DISCORD REPORT
  Discord island + opt-in account summary + Melee watch (real fruit thumbnails), 4 ESP tags, Speed/Jump, Noclip, NPC Auto Attack & Water Walk.
  Your photo is embedded in this single file as a local GUI logo.
  No Auto Quest/Teleport/Fly/Auto Levi. Attack only targets nearby NPCs.
@@ -10601,167 +10601,201 @@ local function reportCurrentFruitMastery(p)
 end
 -- V4.13.4: isolated, fail-safe ACC report. A broken inventory API, data type,
 -- image resolver or HTTP encoder must not crash the rest of the hub.
+-- V4.14: Discord account report is ONE well-spaced embed in ONE webhook message.
+-- Never invent missing inventory or force extra item thumbnails into separate embeds.
+-- Per-field text color isn't supported by Discord; green/purple emoji label balances.
 sendAccountReport = function(isManual)
     if reportBusy then
-        status("ACC đang kiểm tra, không gửi chồng lên nhau.",false)
+        status("ACC đang gửi báo cáo, không gửi chồng lên nhau.", false)
         return
     end
     if not validWebhook(S.webhook) then
-        status("ACC: Hãy dán và lưu Discord webhook trong tab WEBHOOK.",false)
+        status("ACC: Anh chưa lưu webhook Discord trong tab WEBHOOK.", false)
         return
     end
     if not discordRequest() then
-        status("ACC: Công cụ này không hỗ trợ gửi HTTP tới Discord.",false)
+        status("ACC: Công cụ chạy Lua không hỗ trợ HTTP POST Discord.", false)
         return
     end
-    local now=os.clock()
-    if isManual and lastAccountReportAt.attempt>0 and now-lastAccountReportAt.attempt<45 then
-        status("ACC: Vui lòng chờ đủ 45 giây giữa các lần gửi thử.",false)
+    local now = os.clock()
+    if isManual and lastAccountReportAt.attempt > 0 and now-lastAccountReportAt.attempt < 45 then
+        status("ACC: Chờ đủ 45 giây giữa hai lần nhấn gửi thử nhé.", false)
         return
     end
-    reportBusy=true
-    lastAccountReportAt.attempt=now
+    reportBusy = true
+    lastAccountReportAt.attempt = now
     task.spawn(function()
-        local function safeText(x,maxLength)
-            local ok,v=pcall(tostring,x)
-            local str=(ok and type(v)=="string") and v or "Chưa đọc được"
-            str=str:gsub("@everyone","@ everyone"):gsub("@here","@ here")
-            str=str:gsub("[\r\n]"," "):gsub("[<>]","")
-            maxLength=tonumber(maxLength) or 100
-            if #str>maxLength then str=str:sub(1,maxLength-3).."..." end
-            if str=="" or str=="nil" then return "Chưa đọc được" end
-            return str
-        end
-        local function tryValue(fn,default)
-            local ok,result=pcall(fn)
-            return (ok and result~=nil) and result or default
-        end
-        local function safeNumber(v)
-            local ok,x=pcall(reportFmt,v)
-            return ok and safeText(x,75) or "Chưa đọc được"
-        end
-        local function safeList(list,limit)
-            if type(list)~="table" then return "*Chưa đọc được danh sách.*" end
-            local lines={}
-            local n=0
-            for _,item in ipairs(list) do
-                if n>=limit then break end
-                local title=type(item)=="table" and (item.name or item.Name) or item
-                local mastery=type(item)=="table" and tonumber(item.mastery) or nil
-                n=n+1
-                local row="• **"..safeText(title,70).."**"
-                if mastery and mastery>0 and mastery<100000 then
-                    row=row.." • Mastery "..math.floor(mastery)
+        local function clean(value, limit)
+            if value == nil or type(value) == "table" or type(value) == "function" then
+                return "Chưa đọc được"
+            end
+            local ok, valueText = pcall(tostring, value)
+            local t = (ok and type(valueText) == "string") and valueText or "Chưa đọc được"
+            t = t:gsub("@everyone", "@ everyone"):gsub("@here", "@ here")
+            t = t:gsub("[\r\n\t]", " "):gsub("[`<>]", "")
+            t = t:gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+            if t == "" or t == "nil" then t = "Chưa đọc được" end
+            limit = tonumber(limit) or 100
+            if #t > limit then
+                -- Do not truncate in the middle of a UTF-8 character (Discord HTTP 400).
+                local pos = limit - 4
+                while pos > 1 do
+                    local byte = t:byte(pos)
+                    if byte and (byte < 128 or byte >= 192) then break end
+                    pos = pos - 1
                 end
-                lines[#lines+1]=row
+                t = t:sub(1, math.max(1, pos - 1)) .. "…"
             end
-            if #lines==0 then return "*Chưa thấy trong dữ liệu được phép đọc.*" end
-            if #list>limit then lines[#lines+1]="*… và "..(#list-limit).." mục khác*" end
-            return table.concat(lines,"\n")
+            return t
         end
-        -- Limit work done by a damaged external data source. Report a partial
-        -- account snapshot if full inventory parsing fails; never fake items.
-        local snapshotWasPartial=false
-        local snapFailure=""
-        local snapOk,snap=pcall(reportMakeSnapshot)
-        if not snapOk or type(snap)~="table" then
-            snapshotWasPartial=true
-            snapFailure="Bộ đọc kho lỗi (đã bỏ qua)."
-            warn("[TC ACC V4.13.4 INVENTORY]",safeText(snap,180))
-            snap={profile={},groups={},statuses={}}
+        local function from(fn, fallback)
+            local ok, v = pcall(fn)
+            if ok and v ~= nil then return v end
+            return fallback
         end
-        if type(snap.profile)~="table" then snap.profile={}; snapshotWasPartial=true end
-        if type(snap.groups)~="table" then snap.groups={}; snapshotWasPartial=true end
-        if type(snap.statuses)~="table" then snap.statuses={}; snapshotWasPartial=true end
-
-        local p=snap.profile
-        p.name=p.name or tryValue(function() return LocalPlayer.Name end,"Unknown")
-        p.displayName=p.displayName or tryValue(function() return LocalPlayer.DisplayName end,p.name)
-        p.userId=p.userId or tryValue(function() return LocalPlayer.UserId end,0)
-        p.level=p.level or tryValue(function() return reportFind({"Level","Lv"}) end,nil)
-        p.beli=p.beli or tryValue(function() return reportFind({"Beli","Money","Cash"}) end,nil)
-        p.fragments=p.fragments or tryValue(function() return reportFind({"Fragments","Fragment"}) end,nil)
-        p.race=p.race or tryValue(function() return reportFind({"Race","race"}) end,"Chưa đọc được")
-        p.fruit=p.fruit or tryValue(function() return reportFind({"DevilFruit","BloxFruit","Fruit"}) end,"Chưa đọc được")
-        p.sea=p.sea or tryValue(seaName,"Chưa đọc được")
-        local melee=type(snap.groups["VÕ"])=="table" and snap.groups["VÕ"] or {}
-        local fruits=type(snap.groups["TRÁI TRONG KHO"])=="table" and snap.groups["TRÁI TRONG KHO"] or {}
-        local held=type(snap.groups["TRÁI ĐANG CẦM"])=="table" and snap.groups["TRÁI ĐANG CẦM"] or {}
-        local fruitStatus=safeText(snap.statuses.fruits or "Chưa đọc được kho trái",140)
-        local hasFullFruit=not snapshotWasPartial and fruitStatus:find("Đã đọc từ máy chủ",1,true)~=nil
-
-        local embeds={
-            {
-                title="👑 TRUONG CODER • ACC V4.13.4",
-                description="👤 **Tài khoản:** `@"..safeText(p.name,60).."`\n"..
-                    "✨ **Nhân vật:** "..safeText(p.displayName,60).."\n"..
-                    "⏱️ **Tự gửi:** "..safeText(S.accountReportMinutes,5).." phút/lần",
-                color=0x8B5CF6,
-                fields={
-                    {name="⚡ LEVEL",value=safeNumber(p.level),inline=true},
-                    {name="🐉 TỘC",value=safeText(p.race,60),inline=true},
-                    {name="🌊 SEA",value=safeText(p.sea,50),inline=true},
-                    {name="🍈 TRÁI ĐANG DÙNG",value=safeText(p.fruit,75),inline=false},
-                },
-                footer={text="V4.13.4 • BÁO CÁO AN TOÀN • KHÔNG CẦN BOT PC"},
-            },
-            {title="🟢 BELI • TIỀN",description="**"..safeNumber(p.beli).." Beli**",color=0x22C55E},
-            {title="🟣 FRAGMENTS • F",description="**"..safeNumber(p.fragments).." F**",color=0xA855F7},
-            {title="🥊 MELEE • VÕ ("..#melee..")",description=safeList(melee,13),color=0xD946EF},
-            {
-                title="🍇 KHO TRÁI • ĐÃ NHẬN DIỆN "..#fruits,
-                description=(hasFullFruit and "✅ Đọc được từ máy chủ" or "⚠️ Chưa xác minh toàn bộ kho")..
-                    "\n"..safeList(fruits,10).."\n*"..fruitStatus.."*"..
-                    ((#held>0) and ("\n🎒 **Đang cầm:** "..safeList(held,3)) or "")..
-                    (snapshotWasPartial and ("\n⚠️ "..snapFailure) or ""),
-                color=hasFullFruit and 0x14B8A6 or 0xF59E0B,
-            },
-        }
-        -- Art is optional and never allowed to block the primary account report.
-        if S.accountReportImages then
-            local shown={}
-            local pool={p.fruit}
-            for _,item in ipairs(fruits) do
-                if #pool>=5 then break end
-                if type(item)=="table" then pool[#pool+1]=item.name end
+        local function digits(v)
+            local ok, formatted = pcall(reportFmt, v)
+            if ok then return clean(formatted, 64) end
+            return "Chưa đọc được"
+        end
+        local function items(list, maxItems, maxLen)
+            if type(list) ~= "table" then return "*Chưa đọc được dữ liệu.*" end
+            local parts, total = {}, 0
+            for _, row in ipairs(list) do
+                if total >= maxItems then break end
+                total = total + 1
+                local name = (type(row) == "table") and (row.name or row.Name) or row
+                local line = "• **" .. clean(name, 52) .. "**"
+                local qty = type(row) == "table" and tonumber(row.count) or nil
+                local mastery = type(row) == "table" and tonumber(row.mastery) or nil
+                if qty and qty > 1 and qty < 1000000 then line = line .. "  ×" .. math.floor(qty) end
+                if mastery and mastery > 0 and mastery < 1000000 then
+                    line = line .. "  ·  `M" .. math.floor(mastery) .. "`"
+                end
+                parts[#parts+1] = line
             end
-            for _,name in ipairs(pool) do
-                if #embeds>=8 then break end
-                local ok,art,display,rarity=pcall(reportFruitArt,name)
-                local key=safeText(display or name,60)
-                if ok and type(art)=="string" and art:match("^https://") and not shown[key] then
-                    shown[key]=true
-                    embeds[#embeds+1]={
-                        title="🍈 "..key,
-                        description=safeText(rarity or "Blox Fruits",40),
-                        thumbnail={url=art},color=0xA78BFA,
-                    }
+            if #parts == 0 then return "*Chưa nhận diện được từ dữ liệu hiện có.*" end
+            if #list > maxItems then
+                parts[#parts+1] = "*+ " .. (#list-maxItems) .. " món khác*"
+            end
+            local joined = table.concat(parts, "\n")
+            if #joined > maxLen then
+                while #parts > 1 and #joined > maxLen do
+                    table.remove(parts)
+                    joined = table.concat(parts,"\n")
                 end
             end
+            return joined
         end
-        local payload={
-            username="TRUONG CODER | ACC STATUS",
-            allowed_mentions={parse={}},
-            embeds=embeds,
-        }
-        local sent,success,reason=pcall(reportPost,payload)
-        if sent and success then
-            lastAccountReportAt.success=os.clock()
-            lastAccountReportAt.failures=0
-            status("✅ ACC V4.13.4 đã gửi Discord • chu kỳ "..safeText(S.accountReportMinutes,5).." phút",true)
-        else
-            lastAccountReportAt.failures=(lastAccountReportAt.failures or 0)+1
-            local why=sent and reason or success
-            why=safeText(why,130)
-            warn("[TC ACC V4.13.4 DISCORD]",why)
-            status("❌ ACC chưa gửi được: "..why,false)
-            if S.autoAccountReport and lastAccountReportAt.failures>=2 then
-                S.autoAccountReport=false
-                pcall(saveConfig,false)
-                status("⛔ Đã tắt tự gửi ACC sau 2 lần lỗi. Game vẫn hoạt động.",false)
+        local function failure(reason)
+            lastAccountReportAt.failures = (lastAccountReportAt.failures or 0) + 1
+            local msg = clean(reason, 145)
+            warn("[TC ACC V4.14]", msg)
+            status("❌ ACC V4.14 chưa gửi được: " .. msg, false)
+            if S.autoAccountReport and lastAccountReportAt.failures >= 2 then
+                S.autoAccountReport = false
+                pcall(saveConfig, false)
+                status("⛔ Đã tắt TỰ GỬI ACC sau 2 lần lỗi.", false)
             end
         end
-        reportBusy=false
+        local ok, errorText = pcall(function()
+            local snapshotOK, snap = pcall(reportMakeSnapshot)
+            local partial = (not snapshotOK or type(snap) ~= "table")
+            if partial then
+                warn("[TC ACC V4.14 INVENTORY]", clean(snap, 170))
+                snap = {profile={}, groups={}, statuses={}}
+            end
+            if type(snap.profile) ~= "table" then snap.profile={}; partial=true end
+            if type(snap.groups) ~= "table" then snap.groups={}; partial=true end
+            if type(snap.statuses) ~= "table" then snap.statuses={}; partial=true end
+
+            local p = snap.profile
+            p.name = p.name or from(function() return LocalPlayer.Name end, "Unknown")
+            p.displayName = p.displayName or from(function() return LocalPlayer.DisplayName end, p.name)
+            p.userId = p.userId or from(function() return LocalPlayer.UserId end, 0)
+            p.level = p.level or from(function() return reportFind({"Level", "Lv"}) end, nil)
+            p.beli = p.beli or from(function() return reportFind({"Beli", "Money", "Cash"}) end, nil)
+            p.fragments = p.fragments or from(function() return reportFind({"Fragments", "Fragment"}) end, nil)
+            p.race = p.race or from(function() return reportFind({"Race", "race"}) end, "Chưa đọc được")
+            p.fruit = p.fruit or from(function() return reportFind({"DevilFruit", "BloxFruit", "Fruit"}) end, "Chưa đọc được")
+            p.sea = p.sea or from(seaName, "Chưa đọc được")
+
+            local melee = type(snap.groups["VÕ"])=="table" and snap.groups["VÕ"] or {}
+            local fruits = type(snap.groups["TRÁI TRONG KHO"])=="table" and snap.groups["TRÁI TRONG KHO"] or {}
+            local held = type(snap.groups["TRÁI ĐANG CẦM"])=="table" and snap.groups["TRÁI ĐANG CẦM"] or {}
+            local fruitState = clean(snap.statuses.fruits or "Chưa đọc được kho trái", 130)
+            local complete = not partial and fruitState:find("Đã đọc từ máy chủ", 1, true) ~= nil
+
+            -- Discord text is one compact card. Inline fields pair currency values.
+            local fields = {
+                {name="⚡ LEVEL",value="**"..digits(p.level).."**",inline=true},
+                {name="🐉 TỘC",value="**"..clean(p.race,55).."**",inline=true},
+                {name="🌊 SEA",value="**"..clean(p.sea,60).."**",inline=true},
+                {name="💚 BELI",value="**"..digits(p.beli).." Beli**",inline=true},
+                {name="💜 FRAGMENTS",value="**"..digits(p.fragments).." F**",inline=true},
+                {name="🍈 TRÁI ĐANG DÙNG",value="**"..clean(p.fruit,64).."**",inline=true},
+                {name="🥊  VÕ NÂNG CAO · MELEE",value=items(melee,11,780),inline=false},
+            }
+            local fruitField = items(fruits,10,720)
+            if complete then
+                fruitField = "✅ **Đã đọc kho**\n" .. fruitField
+            elseif #fruits > 0 then
+                fruitField = "⚠️ *Chỉ nhận diện được một phần kho*\n" .. fruitField
+            else
+                fruitField = "⚠️ *Chưa đọc được kho trái — không có nghĩa là kho trống.*"
+            end
+            fields[#fields+1] = {name="🍇  TRÁI TRONG KHO",value=fruitField,inline=false}
+            if #held > 0 then
+                fields[#fields+1] = {name="🎒  TRÁI ĐANG CẦM",value=items(held,3,260),inline=false}
+            end
+            if partial then
+                fields[#fields+1] = {name="⚠️ TRẠNG THÁI",value="Một phần dữ liệu chưa đọc được; báo cáo vẫn được gửi.",inline=false}
+            end
+            local embed = {
+                author={name="TRUONG CODER  ·  BLOX FRUITS"},
+                title="👑  BÁO CÁO TÀI KHOẢN  ·  V4.14",
+                description="**THEO DÕI PHIÊN CHƠI**\n" ..
+                    "👤 **Tài khoản:** `@"..clean(p.name,40).."`\n" ..
+                    "✨ **Nhân vật:** "..clean(p.displayName,48).."\n" ..
+                    "━━━━━━━━━━━━━━━━━━━━━━",
+                color=0x7C3AED,
+                fields=fields,
+                footer={text="V4.14  •  Tự cập nhật mỗi " .. clean(S.accountReportMinutes,5) .. " phút  •  Chỉ cảnh báo Melee"},
+                timestamp=os.date("!%Y-%m-%dT%H:%M:%SZ"),
+            }
+            -- Only ONE thumbnail on the header; Discord cannot align one image
+            -- on the left of each row without generating a separate poster.
+            if S.accountReportImages then
+                local image
+                local possible = clean(p.fruit,68)
+                if possible ~= "Chưa đọc được" then
+                    local artOk, url = pcall(reportFruitArt, possible)
+                    if artOk and type(url)=="string" and url:match("^https://") then image=url end
+                end
+                if not image then
+                    local avatarOK, avatar = pcall(reportAvatarUrl, p.userId)
+                    if avatarOK and type(avatar)=="string" and avatar:match("^https://") then image=avatar end
+                end
+                if image then embed.thumbnail={url=image} end
+            end
+            -- A single webhook POST, with one embedded panel. No TXT uploads.
+            local successOK, result, reason = pcall(reportPost, {
+                username="TRUONG CODER | ACC STATUS",
+                allowed_mentions={parse={}},
+                embeds={embed},
+            })
+            if successOK and result then
+                lastAccountReportAt.success = os.clock()
+                lastAccountReportAt.failures = 0
+                status("✅ ACC V4.14 đã gửi báo cáo Discord gọn, một khung!", true)
+            else
+                failure(successOK and reason or result)
+            end
+        end)
+        if not ok then
+            failure("Lỗi xử lý ACC: " .. clean(errorText,135))
+        end
+        reportBusy = false
     end)
 end
 
@@ -10801,7 +10835,7 @@ local function sendMeleeNotice(item)
         "*Võ vừa được phát hiện trong balô/nhân vật; không khẳng định vừa mở khóa.*"
     local embed={title="🥊 MELEE PHÁT HIỆN  |  "..item.name,
         description=description,color=REPORT_COLORS.melee,
-        footer={text="TRUONG CODER V4.13 • CHỈ BÁO VÕ"},
+        footer={text="TRUONG CODER V4.14 • CHỈ BÁO VÕ"},
         timestamp=os.date("!%Y-%m-%dT%H:%M:%SZ")}
     if item.image then
         local img=reportAssetUrl(item.image)
@@ -10920,7 +10954,7 @@ avatar.Position=UDim2.fromOffset(13,11)
 local title=label(header,"TRUONG CODER",20,T.cyan)
 title.Position=UDim2.fromOffset(78,11)
 title.Size=UDim2.fromOffset(356,29)
-local subtitle=label(header,"SEA WATCH  •  ACCOUNT REPORT  •  V4.13.1",11,T.muted)
+local subtitle=label(header,"SEA WATCH  •  ACCOUNT REPORT  •  V4.14",11,T.muted)
 subtitle.Position=UDim2.fromOffset(79,39)
 subtitle.Size=UDim2.fromOffset(356,20)
 local collapse=button(header,"−",T.surface3)
@@ -11326,8 +11360,8 @@ end))
 
 -- ===================== TRUONG CODER V4.9 ACCOUNT REPORT UI =====================
 local accPage=pages.ACC
-addLabel(accPage,"👑 ACC V4.13.4 • FIX BÁO CÁO KHÔNG CRASH",31,15,T.cyan)
-addLabel(accPage,"V4.13.4: giữ nguyên tính năng game, báo cáo ACC dự phòng khi kho lỗi. Beli xanh, F tím, chỉ báo Melee. Không cần PC bot.",85,11,T.muted)
+addLabel(accPage,"👑 ACC V4.14 • BÁO CÁO GỌN ĐẸP",31,15,T.cyan)
+addLabel(accPage,"V4.14: Discord chỉ một khung lớn. Beli 💚, F 💜, Melee và kho trái rõ ràng. Tự gửi bằng webhook.",85,11,T.muted)
 toggle(accPage,"TỰ ĐỘNG GỬI BÁO CÁO DISCORD", "autoAccountReport")
 toggle(accPage,"KÈM ẢNH TRÁI + VÕ THẬT (NẾU CÓ)", "accountReportImages")
 toggle(accPage,"CHỈ BÁO KHI PHÁT HIỆN VÕ (MELEE)", "autoMeleeDiscord")
@@ -11348,7 +11382,7 @@ on(intervalInput.FocusLost:Connect(function()
     end
     intervalInput.Text=tostring(S.accountReportMinutes)
 end))
-local reportNowButton=addButton(accPage,"📤 GỬI THỬ ACC V4.13.4 • BẢN ỔN ĐỊNH",color(23,127,152))
+local reportNowButton=addButton(accPage,"📤 GỬI BÁO CÁO ACC V4.14 NGAY",color(23,127,152))
 on(reportNowButton.MouseButton1Click:Connect(function()
     local n=tonumber(intervalInput.Text)
     if n then S.accountReportMinutes=math.clamp(math.floor(n+0.5),5,180) end
@@ -11357,7 +11391,7 @@ on(reportNowButton.MouseButton1Click:Connect(function()
     sendAccountReport(true)
 end))
 addLabel(accPage,"🔒 Chỉ gửi khi anh tự bật hoặc nhấn nút. Webhook phải được lưu ở tab WEBHOOK; không bao giờ đưa webhook lên GitHub công khai.",67,11,T.muted)
-addLabel(accPage,"✅ V4.13: 1 webhook = 1 tin Discord nhiều khung. Beli xanh, F tím. Không cần bot PC; ảnh trái thumbnail nằm bên phải.",75,11,T.mint)
+addLabel(accPage,"✅ V4.14: 1 lần gửi = 1 tin, 1 bảng đẹp. Beli 💚 / F 💜. Chỉ cảnh báo Melee. Ảnh ở góc phải nếu có.",75,11,T.mint)
 addLabel(accPage,"🍇 Nếu kho báo NIL: mở Menu > Items > Treasure trước lúc gửi thử. Dữ liệu UI chỉ là bản xem trước, không bảo đảm toàn bộ kho.",71,11,T.yellow)
 
 -- NPC-only Auto Attack, not player-vs-player. One current target, no teleport.
@@ -12112,4 +12146,4 @@ task.spawn(function()
 end)
 
 tab("ESP")
-print("TRUONG CODER HD V4.13 GITHUB ONLY + MELEE WATCH started; saved config loaded:",wasLoaded)
+print("TRUONG CODER HD V4.14 GITHUB ONLY + CLEAN REPORT started; saved config loaded:",wasLoaded)
