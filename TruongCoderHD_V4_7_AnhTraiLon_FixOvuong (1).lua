@@ -10131,7 +10131,9 @@ end
 -- Lua's 200-local limit in the main chunk. Four shared callbacks/state values
 -- remain accessible to the main GUI and heartbeat code.
 local reportBusy=false
-local lastAccountReportAt=0
+-- V4.13.2: separate attempted sends from confirmed success.
+-- Reuse one local table so the main chunk does not exceed Lua's local limit.
+local lastAccountReportAt={attempt=0,success=0}
 local sendAccountReport, watchOnlyMelee
 do
 local REPORT_COLORS = {
@@ -10490,7 +10492,17 @@ local function reportPost(payload,txtname,txtcontent)
     local code=tonumber(res and (res.StatusCode or res.Status)) or 0
     if code>=200 and code<300 then return true,nil end
     if code==429 then
-        return false,"HTTP 429: Discord giới hạn gửi tin, thử tăng số phút"
+        return false,"HTTP 429: Discord giới hạn tốc độ, hãy thử lại sau"
+    end
+    if code==401 or code==403 or code==404 then
+        return false,"HTTP "..code..": Webhook đã bị xóa, sai URL hoặc thiếu quyền"
+    end
+    if code==400 then
+        warn("[TC V4.13.2 HTTP 400] Discord response:",tostring(res and res.Body or "(empty)"):sub(1,750))
+        return false,"HTTP 400: Báo cáo không đúng định dạng, xem F9/Output"
+    end
+    if code==0 then
+        return false,"Không nhận được mã HTTP; executor có thể chặn request"
     end
     return false,"HTTP "..code..": "..tostring(res and res.Body or "Không phản hồi"):sub(1,130)
 end
@@ -10585,11 +10597,11 @@ sendAccountReport = function(isManual)
     if reportBusy then status("Đang gửi ACC V4.13",false);return end
     if not validWebhook(S.webhook) then status("Chưa lưu webhook trong tab WEBHOOK",false);return end
     if not discordRequest() then status("Công cụ hiện tại không hỗ trợ HTTP POST",false);return end
-    if isManual and lastAccountReportAt>0 and os.clock()-lastAccountReportAt<45 then
-        status("Gửi thử tối đa 1 lần / 45 giây",false);return
+    if isManual and lastAccountReportAt.attempt>0 and os.clock()-lastAccountReportAt.attempt<45 then
+        status("Gửi thử tối đa 1 lần / 45 giây. Xin thử lại sau.",false);return
     end
     reportBusy=true
-    lastAccountReportAt=os.clock()
+    lastAccountReportAt.attempt=os.clock()
     task.spawn(function()
         local ok,err=pcall(function()
             status("Đang đọc ACC V4.13 (chỉ dữ liệu game cho phép)...",true)
@@ -10611,7 +10623,7 @@ sendAccountReport = function(isManual)
             -- Card 1: profile + avatar. Purple premium heading.
             local profile={
                 author={name="TRUONG CODER • BLOX FRUITS ACCOUNT TRACKER"},
-                title="👑 BÁO CÁO TÀI KHOẢN • V4.13",
+                title="👑 BÁO CÁO TÀI KHOẢN • V4.13.2",
                 description="**Theo dõi phiên chơi**\n"..
                     "👤 **Tài khoản:** `@"..reportSafeText(p.name,65).."`\n"..
                     "✨ **Nhân vật:** "..reportSafeText(p.displayName,65).."\n"..
@@ -10623,7 +10635,7 @@ sendAccountReport = function(isManual)
                     {name="🌊 SEA",value="**"..reportSafeText(p.sea,35).."**",inline=true},
                     {name="🍈 TRÁI ĐANG DÙNG",value="**"..fruitText.."**",inline=false},
                 },
-                footer={text="V4.13 GITHUB ONLY • KẾT QUẢ ĐỌC ĐƯỢC • KHÔNG CẦN BOT PC"},
+                footer={text="V4.13.2 • AUTO REPORT FIX • KHÔNG CẦN BOT PC"},
                 timestamp=os.date("!%Y-%m-%dT%H:%M:%SZ"),
             }
             local avatar=reportAvatarUrl(p.userId)
@@ -10687,15 +10699,17 @@ sendAccountReport = function(isManual)
                 allowed_mentions={parse={}},embeds=embeds}
             local success,reason=reportPost(payload)
             if success then
-                status("✅ Gửi báo cáo V4.13 thành công • chỉ cần GitHub + webhook",true)
+                lastAccountReportAt.success=os.clock()
+                status("✅ Discord đã nhận báo cáo V4.13.2 • lần tiếp theo sau "..tostring(S.accountReportMinutes).." phút",true)
             else
-                status("❌ Discord từ chối: "..tostring(reason):sub(1,125),false)
-                warn("[TC V4.13 GITHUB ONLY]",reason)
+                status("❌ GỬI THẤT BẠI: "..tostring(reason):sub(1,125),false)
+                warn("[TC V4.13.2 AUTO REPORT] ",reason)
+                -- Auto mode retries after >=120 seconds, never every 5 seconds.
             end
         end)
         if not ok then
-            status("❌ Báo cáo V4.13 lỗi: "..tostring(err):sub(1,115),false)
-            warn("[TC V4.13]",err)
+            status("❌ LỖI BÁO CÁO: "..tostring(err):sub(1,115),false)
+            warn("[TC V4.13.2 REPORT]",err)
         end
         reportBusy=false
     end)
@@ -11121,6 +11135,19 @@ local function toggle(page,message,key)
             if toggleSetters.waterWalk then toggleSetters.waterWalk() end
         end
         toggleSetters[key]()
+        if key=="autoAccountReport" then
+            if not S.autoAccountReport then
+                status("⏸️ Đã tắt tự gửi ACC",true)
+            elseif not validWebhook(S.webhook) then
+                status("❌ AUTO ACC: Chưa có URL webhook. Qua tab WEBHOOK để lưu.",false)
+                notice("TRUONG CODER ACC", "Chưa có webhook Discord hợp lệ")
+            elseif not discordRequest() then
+                status("❌ AUTO ACC: Công cụ không hỗ trợ HTTP request.",false)
+                notice("TRUONG CODER ACC", "Không thể gửi webhook từ công cụ hiện tại")
+            else
+                status("✅ Đã bật tự gửi ACC; sẽ thử gửi trong vài giây. Chu kỳ "..tostring(S.accountReportMinutes).." phút",true)
+            end
+        end
         if key=="speedEnabled" or key=="jumpEnabled" then applyMotion() end
         saveConfig(false)
         if key=="noclip" and not S.noclip then
@@ -11249,7 +11276,7 @@ end))
 
 -- ===================== TRUONG CODER V4.9 ACCOUNT REPORT UI =====================
 local accPage=pages.ACC
-addLabel(accPage,"👑 ACC V4.13 • REALKID STYLE • GITHUB ONLY",31,15,T.cyan)
+addLabel(accPage,"👑 ACC V4.13.2 • FIX TỰ GỬI • GITHUB ONLY",31,15,T.cyan)
 addLabel(accPage,"Bản V4.13: chỉ cần GitHub + webhook. Báo cáo kiểu RealKid với nhiều khung màu, ảnh trái nhỏ ở góc phải nếu có nguồn; KHÔNG cần PC bot.",85,11,T.muted)
 toggle(accPage,"TỰ ĐỘNG GỬI BÁO CÁO DISCORD", "autoAccountReport")
 toggle(accPage,"KÈM ẢNH TRÁI + VÕ THẬT (NẾU CÓ)", "accountReportImages")
@@ -11271,7 +11298,7 @@ on(intervalInput.FocusLost:Connect(function()
     end
     intervalInput.Text=tostring(S.accountReportMinutes)
 end))
-local reportNowButton=addButton(accPage,"📤 GỬI BÁO CÁO ACC V4.13 NGAY",color(23,127,152))
+local reportNowButton=addButton(accPage,"📤 GỬI THỬ BÁO CÁO ACC V4.13.2",color(23,127,152))
 on(reportNowButton.MouseButton1Click:Connect(function()
     local n=tonumber(intervalInput.Text)
     if n then S.accountReportMinutes=math.clamp(math.floor(n+0.5),5,180) end
@@ -11976,10 +12003,23 @@ task.spawn(function()
     while running do
         task.wait(5)
         if not running then break end
-        if S.autoAccountReport and validWebhook(S.webhook) and discordRequest() and not reportBusy then
-            local every=math.clamp(tonumber(S.accountReportMinutes) or 30,5,180)*60
-            if lastAccountReportAt==0 or os.clock()-lastAccountReportAt>=every then
-                sendAccountReport(false)
+        if S.autoAccountReport and not reportBusy then
+            if not validWebhook(S.webhook) then
+                if lastAccountReportAt.attempt==0 then
+                    status("❌ AUTO ACC: Webhook chưa hợp lệ. Mở WEBHOOK > dán URL > LƯU.",false)
+                end
+            elseif not discordRequest() then
+                if lastAccountReportAt.attempt==0 then
+                    status("❌ AUTO ACC: Công cụ không hỗ trợ HTTP POST Discord.",false)
+                end
+            else
+                local every=math.clamp(tonumber(S.accountReportMinutes) or 30,5,180)*60
+                local sinceAttempt=os.clock()-lastAccountReportAt.attempt
+                local sinceSuccess=os.clock()-lastAccountReportAt.success
+                if (lastAccountReportAt.attempt==0 or sinceAttempt>=120)
+                    and (lastAccountReportAt.success==0 or sinceSuccess>=every) then
+                    sendAccountReport(false)
+                end
             end
         end
     end
