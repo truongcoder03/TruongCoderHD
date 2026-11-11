@@ -1,5 +1,5 @@
 --[[
- TRUONG CODER HD | V4.7 - REAL FRUIT PICTURE + V4.3 FEATURES
+ TRUONG CODER HD | V4.8 - FRUIT NOTIFY FIX + V4.3 FEATURES
  Discord island + confirmed inventory change + new-fruit alerts (with images), 4 ESP tags, Speed/Jump, Noclip, NPC Auto Attack & Water Walk.
  Your photo is embedded in this single file as a local GUI logo.
  No Auto Quest/Teleport/Fly/Auto Levi. Attack only targets nearby NPCs.
@@ -50,7 +50,7 @@ local S = {
     attackDelayMs = 400,
     autoDiscord = true,
     autoFruitDiscord = true, -- Thong bao khi so luong trai trong kho tang
-    autoFoundFruitDiscord = false, -- Tu chon: thong bao khi nhan trai vao balo
+    autoFoundFruitDiscord = true, -- Mac dinh BAT: bao khi trai moi vao balo
     fruitMentionEveryone = false,
     webhook = "",
     robloxLogoId = "",
@@ -166,6 +166,10 @@ local function loadConfig()
 end
 
 local wasLoaded = loadConfig()
+-- V4.8: Force both user-requested fruit alerts ON on upgrade.
+-- They can still be disabled from the Webhook page after startup.
+S.autoFruitDiscord = true
+S.autoFoundFruitDiscord = true
 -- IMPORTANT: Old saved settings from V1 may have every ESP category ON.
 -- Force these OFF even if the old config says true, but retain saved webhook,
 -- Noclip, logo and button positions. Never render ordinary island labels.
@@ -9861,6 +9865,7 @@ end
 -- as fresh Gacha results on each executor restart.
 local observedFruitTools=setmetatable({}, {__mode="k"})
 local lastFruitNotice={}
+local fruitMonitorStats = {toolNotices=0,storedNotices=0,inventoryChecks=0,inventoryErrors=0,lastError="",lastInventory=0}
 local function observeFruitTool(item,existing)
     if not running or not item or not item:IsA("Tool") or observedFruitTools[item] then return end
     local base,displayName=fruitInfo(item.Name)
@@ -9870,6 +9875,8 @@ local function observeFruitTool(item,existing)
     local now=os.clock()
     if lastFruitNotice[displayName] and now-lastFruitNotice[displayName]<4 then return end
     lastFruitNotice[displayName]=now
+    fruitMonitorStats.toolNotices=fruitMonitorStats.toolNotices+1
+    status("PHAT HIEN TRAI MOI TRONG BALO: "..displayName,true)
     sendFruitDiscord(displayName,false,nearGacha(),false)
 end
 
@@ -9896,6 +9903,18 @@ local function startFruitWatch()
     on(LocalPlayer.CharacterAdded:Connect(function(newCharacter)
         watchFruitContainer(newCharacter)
     end))
+    -- V4.8: scan occasionally as a fallback for delayed tool replication.
+    -- Previously seen Tool objects are ignored, so re-equipping won't re-alert.
+    while running do
+        for _,container in ipairs({LocalPlayer:FindFirstChildOfClass("Backpack"),LocalPlayer.Character}) do
+            if container then
+                for _,item in ipairs(container:GetChildren()) do
+                    observeFruitTool(item,false)
+                end
+            end
+        end
+        task.wait(3)
+    end
 end
 
 -- V4.6: check server inventory changes instead of guessing from Backpack alone.
@@ -9909,7 +9928,12 @@ local function readStoredFruits()
     local ok,items=pcall(function()
         return remote:InvokeServer("getInventoryFruits")
     end)
-    if not ok or type(items)~="table" then return nil end
+    fruitMonitorStats.inventoryChecks=fruitMonitorStats.inventoryChecks+1
+    if not ok or type(items)~="table" then
+        fruitMonitorStats.inventoryErrors=fruitMonitorStats.inventoryErrors+1
+        fruitMonitorStats.lastError = ok and ("Inventory response: "..typeof(items)) or tostring(items)
+        return nil
+    end
     local result={}
     for _,item in pairs(items) do
         if type(item)=="table" and type(item.Name)=="string" then
@@ -9925,7 +9949,27 @@ local function readStoredFruits()
             end
         end
     end
+    local total=0
+    for _,fruit in pairs(result) do total=total+fruit.count end
+    fruitMonitorStats.lastInventory=total
     return result
+end
+
+local function fruitDiagnostics()
+    local requestReady=discordRequest() ~= nil
+    local hookReady=validWebhook(S.webhook)
+    local stored=readStoredFruits()
+    local count=0
+    if stored then for _ in pairs(stored) do count=count+1 end end
+    local msg="HTTP: "..(requestReady and "OK" or "KHONG HO TRO")
+        .." | WEBHOOK: "..(hookReady and "OK" or "CHUA LUU")
+        .." | KHO: "..(stored and (tostring(count).." LOAI") or "KHONG DOC DUOC")
+    status(msg,requestReady and hookReady and stored~=nil)
+    warn("[TRUONG CODER V4.8 DIAGNOSTICS] "..msg
+        .." | fruit-tool notices="..tostring(fruitMonitorStats.toolNotices)
+        .." | stored notices="..tostring(fruitMonitorStats.storedNotices)
+        .." | inventory errors="..tostring(fruitMonitorStats.inventoryErrors)
+        .." | last error="..tostring(fruitMonitorStats.lastError))
 end
 
 local function startStoredFruitWatch()
@@ -9944,7 +9988,11 @@ local function startStoredFruitWatch()
                         if item.count>(old and old.count or 0) then
                             local base=fruitInfo(item.name)
                             if base then
+                                fruitMonitorStats.storedNotices=fruitMonitorStats.storedNotices+1
+                                status("KHO VUA TANG: "..item.name.." (+"..tostring(item.count-(old and old.count or 0))..")",true)
                                 sendFruitDiscord(item.name,false,false,false,true)
+                            else
+                                warn("[TRUONG CODER V4.8] Unknown inventory fruit name: "..tostring(item.name))
                             end
                         end
                     end
@@ -9954,11 +10002,11 @@ local function startStoredFruitWatch()
                 failed=failed+1
                 -- Do not replace the previous snapshot on a temporary server failure.
                 if failed==1 then
-                    warn("[TRUONG CODER] Cannot read stored-fruit inventory; retrying")
+                    warn("[TRUONG CODER V4.8] Cannot read stored-fruit inventory: "..tostring(fruitMonitorStats.lastError))
                 end
             end
         end
-        task.wait(6)
+        task.wait(4)
     end
 end
 
@@ -10490,11 +10538,14 @@ create("UIPadding",input,{PaddingLeft=UDim.new(0,9),PaddingRight=UDim.new(0,9)})
 local saveButton=addButton(hookPage,"LUU WEBHOOK",color(22,119,172))
 local clearHook=addButton(hookPage,"XOA WEBHOOK DA LUU",color(117,44,69))
 toggle(hookPage,"TU BAO DISCORD KHI PHAT HIEN DAO", "autoDiscord")
-addLabel(hookPage,"✨ FRUIT WATCH V4.7 • ANH TRAI LON + NEON",32,15,T.yellow)
+addLabel(hookPage,"✨ FRUIT WATCH V4.8 • QUAY / CAT TRAI",32,15,T.yellow)
 addLabel(hookPage,"Báo ĐÃ CẤT khi kiểm tra thấy số lượng trái trong kho tăng. Tránh báo nhầm lúc chỉ cầm trái; không tự cất trái.",75,11,T.muted)
 toggle(hookPage,"TỰ BÁO DISCORD KHI ĐÃ CẤT TRÁI", "autoFruitDiscord")
 toggle(hookPage,"BÁO KHI NHẬN TRÁI VÀO BALÔ (TÙY CHỌN)", "autoFoundFruitDiscord")
 toggle(hookPage,"PING @EVERYONE KHI CÓ TRÁI (TÙY CHỌN)", "fruitMentionEveryone")
+local checkFruitWatch = addButton(hookPage,"🔍 KIEM TRA HTTP + WEBHOOK + KHO",color(26,102,141))
+on(checkFruitWatch.MouseButton1Click:Connect(fruitDiagnostics))
+addLabel(hookPage,"Quay trai: bao khi Tool trai MOI vao balo. Cat trai: bao khi so luong kho tang. Neu kho khong doc duoc, bam KIEM TRA de xem loi.",79,11,T.muted)
 local testFruitWebhook=addButton(hookPage,"🧪 TEST POSTER ÓNG ÁNH HELLFIRE (GAS)",color(112,56,151))
 on(testFruitWebhook.MouseButton1Click:Connect(function()
     sendFruitDiscord("Hellfire (Gas)",true,false,false)
