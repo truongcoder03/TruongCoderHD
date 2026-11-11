@@ -1,5 +1,5 @@
 --[[
- TRUONG CODER HD | V4.13 - GITHUB ONLY ACC REPORT
+ TRUONG CODER HD | V4.13.1 - FIX MENU NOT LOADING
  Discord island + opt-in account summary + Melee watch (real fruit thumbnails), 4 ESP tags, Speed/Jump, Noclip, NPC Auto Attack & Water Walk.
  Your photo is embedded in this single file as a local GUI logo.
  No Auto Quest/Teleport/Fly/Auto Levi. Attack only targets nearby NPCs.
@@ -10127,6 +10127,13 @@ end
 -- Read-only: never buys, stores, equips, or transfers any item.
 -- Shares account snapshot only to the Discord webhook entered by user.
 -- ================================================================
+-- FIX V4.13.1: put all report locals inside a private scope, to avoid
+-- Lua's 200-local limit in the main chunk. Four shared callbacks/state values
+-- remain accessible to the main GUI and heartbeat code.
+local reportBusy=false
+local lastAccountReportAt=0
+local sendAccountReport, watchOnlyMelee
+do
 local REPORT_COLORS = {
     main=0xA78BFA, level=0xFBBF24, beli=0x22C55E,
     fragments=0x38BDF8, melee=0xEF85FE, fruits=0xF59E0B,
@@ -10487,8 +10494,6 @@ local function reportPost(payload,txtname,txtcontent)
     end
     return false,"HTTP "..code..": "..tostring(res and res.Body or "Không phản hồi"):sub(1,130)
 end
-local reportBusy=false
-local lastAccountReportAt=0
 -- ==============================================================
 -- V4.13 GITHUB ONLY • RealKid-like Discord embeds, no PC bot.
 -- All sections are sent with ONE webhook POST in ONE Discord message.
@@ -10576,7 +10581,7 @@ local function reportCurrentFruitMastery(p)
     end
     return nil
 end
-local function sendAccountReport(isManual)
+sendAccountReport = function(isManual)
     if reportBusy then status("Đang gửi ACC V4.13",false);return end
     if not validWebhook(S.webhook) then status("Chưa lưu webhook trong tab WEBHOOK",false);return end
     if not discordRequest() then status("Công cụ hiện tại không hỗ trợ HTTP POST",false);return end
@@ -10742,7 +10747,7 @@ local function sendMeleeNotice(item)
         allowed_mentions={parse={}},embeds={embed}})
     if not passed then warn("[TC MELEE WATCH]",reason) end
 end
-local function watchOnlyMelee()
+watchOnlyMelee = function()
     while running do
         if S.autoMeleeDiscord and validWebhook(S.webhook) and discordRequest() then
             local visible=reportVisibleMeleeTools()
@@ -10778,6 +10783,8 @@ screen=create("ScreenGui",PlayerGui,{
 })
 
 -- Slim loading splash
+end -- end private report scope; release its local variables
+
 local loading=create("Frame",screen,{
     Size=UDim2.fromScale(1,1),
     BackgroundColor3=T.background,
@@ -10849,7 +10856,7 @@ avatar.Position=UDim2.fromOffset(13,11)
 local title=label(header,"TRUONG CODER",20,T.cyan)
 title.Position=UDim2.fromOffset(78,11)
 title.Size=UDim2.fromOffset(356,29)
-local subtitle=label(header,"SEA WATCH  •  ACCOUNT REPORT  •  V4.12",11,T.muted)
+local subtitle=label(header,"SEA WATCH  •  ACCOUNT REPORT  •  V4.13.1",11,T.muted)
 subtitle.Position=UDim2.fromOffset(79,39)
 subtitle.Size=UDim2.fromOffset(356,20)
 local collapse=button(header,"−",T.surface3)
