@@ -10512,23 +10512,27 @@ end
 -- Color means the bar on the LEFT of each embed: Discord cannot color
 -- arbitrary words or position thumbnails to the left of every line.
 -- ==============================================================
+-- V4.13.3: force reliable text conversion for unexpected Roblox value types.
 local function reportSafeText(value,limit)
     local str=tostring(value==nil and "Chưa đọc được" or value)
     str=str:gsub("@everyone","@ everyone"):gsub("@here","@ here")
         :gsub("[\r\n]+"," "):gsub("[<>]","")
-    limit=limit or 120
+    limit=math.max(8,math.floor(tonumber(limit) or 120))
     if #str>limit then str=str:sub(1,limit-3).."..." end
+    if str=="" then return "Chưa đọc được" end
     return str
 end
 local function reportShortList(list,howMany,maxChars)
+    if type(list)~="table" then return "*Dữ liệu danh sách chưa hợp lệ ("..type(list)..").*" end
     local lines={}
-    maxChars=maxChars or 850
-    howMany=howMany or 10
-    for i,item in ipairs(list or {}) do
+    maxChars=math.max(100,tonumber(maxChars) or 850)
+    howMany=math.max(1,tonumber(howMany) or 10)
+    for i,item in ipairs(list) do
         if i>howMany then break end
-        local label=reportSafeText(item.name or item,55)
-        local count=tonumber(item.count)
-        local master=tonumber(item.mastery)
+        local row=type(item)=="table" and item or {name=tostring(item)}
+        local label=reportSafeText(row.name or row.Name or "Chưa rõ",55)
+        local count=tonumber(row.count)
+        local master=tonumber(row.mastery)
         local suffix=(count and count>1) and ("  ×"..math.floor(count)) or ""
         if master and master>0 then suffix=suffix..("  •  Mastery "..math.floor(master)) end
         local line="• **"..label.."**"..suffix
@@ -10554,13 +10558,15 @@ local function reportBriefItems(snapshot)
     local names={"KIẾM","SÚNG","PHỤ KIỆN","NGUYÊN LIỆU","TRANG BỊ / KHÁC"}
     local chunks={}
     for _,cat in ipairs(names) do
-        local list=snapshot.groups[cat] or {}
+        local list=(snapshot and snapshot.groups and snapshot.groups[cat]) or {}
+        if type(list)~="table" then list={} end
         if #list>0 then
             -- This is a STATUS SUMMARY, not a sword/gun acquisition alert.
             local title=cat.." ("..#list..")"
             local lines={}
             for i=1,math.min(#list,4) do
-                lines[#lines+1]=reportSafeText(list[i].name,33)
+                local row=type(list[i])=="table" and list[i] or {name=tostring(list[i])}
+                lines[#lines+1]=reportSafeText(row.name,33)
             end
             chunks[#chunks+1]="**"..title..":** "..table.concat(lines,", ")
                 ..(#list>4 and (" … +"..(#list-4)) or "")
@@ -10603,14 +10609,20 @@ sendAccountReport = function(isManual)
     reportBusy=true
     lastAccountReportAt.attempt=os.clock()
     task.spawn(function()
-        local ok,err=pcall(function()
-            status("Đang đọc ACC V4.13 (chỉ dữ liệu game cho phép)...",true)
+        local step="khởi tạo"
+        local ok,err=xpcall(function()
+            status("Đang đọc ACC V4.13.3 (chỉ dữ liệu game cho phép)...",true)
+            step="đọc dữ liệu Roblox / kho"
             local snap=reportMakeSnapshot()
             if not running then return end
+            if type(snap)~="table" or type(snap.groups)~="table" or type(snap.profile)~="table" then
+                error("Dữ liệu tài khoản không hợp lệ: "..typeof(snap))
+            end
+            step="chuẩn bị danh sách vật phẩm"
             local p=snap.profile
-            local fruits=snap.groups["TRÁI TRONG KHO"] or {}
-            local held=snap.groups["TRÁI ĐANG CẦM"] or {}
-            local melee=snap.groups["VÕ"] or {}
+            local fruits=type(snap.groups["TRÁI TRONG KHO"])=="table" and snap.groups["TRÁI TRONG KHO"] or {}
+            local held=type(snap.groups["TRÁI ĐANG CẦM"])=="table" and snap.groups["TRÁI ĐANG CẦM"] or {}
+            local melee=type(snap.groups["VÕ"])=="table" and snap.groups["VÕ"] or {}
             local eqStatus=tostring(snap.statuses.equipment or "Chưa đọc được")
             local fruitStatus=tostring(snap.statuses.fruits or "Chưa đọc được")
             local fullFruit=fruitStatus:find("Đã đọc từ máy chủ",1,true)~=nil
@@ -10619,11 +10631,12 @@ sendAccountReport = function(isManual)
             if itemMastery and itemMastery>0 then
                 fruitText=fruitText.."  •  Mastery "..math.floor(itemMastery)
             end
+            step="tạo thông tin và khung màu"
             local embeds={}
             -- Card 1: profile + avatar. Purple premium heading.
             local profile={
                 author={name="TRUONG CODER • BLOX FRUITS ACCOUNT TRACKER"},
-                title="👑 BÁO CÁO TÀI KHOẢN • V4.13.2",
+                title="👑 BÁO CÁO TÀI KHOẢN • V4.13.3",
                 description="**Theo dõi phiên chơi**\n"..
                     "👤 **Tài khoản:** `@"..reportSafeText(p.name,65).."`\n"..
                     "✨ **Nhân vật:** "..reportSafeText(p.displayName,65).."\n"..
@@ -10635,9 +10648,10 @@ sendAccountReport = function(isManual)
                     {name="🌊 SEA",value="**"..reportSafeText(p.sea,35).."**",inline=true},
                     {name="🍈 TRÁI ĐANG DÙNG",value="**"..fruitText.."**",inline=false},
                 },
-                footer={text="V4.13.2 • AUTO REPORT FIX • KHÔNG CẦN BOT PC"},
+                footer={text="V4.13.3 • FIX STRING + HIỆN LỖI ĐẦY ĐỦ • KHÔNG CẦN BOT PC"},
                 timestamp=os.date("!%Y-%m-%dT%H:%M:%SZ"),
             }
+            step="lấy avatar Roblox"
             local avatar=reportAvatarUrl(p.userId)
             if type(avatar)=="string" and avatar:match("^https://") then
                 profile.thumbnail={url=avatar}
@@ -10670,6 +10684,7 @@ sendAccountReport = function(isManual)
                 color=0x64748B}
             -- Cards 7-10: REAL fruit art as thumbnails (right side; API limitation).
             -- Maximum 10 embeds in ONE Discord message; do not send item spam.
+            step="tìm hình trái ác quỷ"
             if S.accountReportImages then
                 local already={}
                 local pool={}
@@ -10695,21 +10710,35 @@ sendAccountReport = function(isManual)
                     end
                 end
             end
+            step="mã hóa JSON và gửi webhook Discord"
             local payload={username="TRUONG CODER | ACC REPORT",
                 allowed_mentions={parse={}},embeds=embeds}
             local success,reason=reportPost(payload)
             if success then
                 lastAccountReportAt.success=os.clock()
-                status("✅ Discord đã nhận báo cáo V4.13.2 • lần tiếp theo sau "..tostring(S.accountReportMinutes).." phút",true)
+                status("✅ Discord đã nhận báo cáo V4.13.3 • lần tiếp theo sau "..tostring(S.accountReportMinutes).." phút",true)
             else
                 status("❌ GỬI THẤT BẠI: "..tostring(reason):sub(1,125),false)
                 warn("[TC V4.13.2 AUTO REPORT] ",reason)
                 -- Auto mode retries after >=120 seconds, never every 5 seconds.
             end
+        end,function(cause)
+            -- Keep the full error and stage in F9. Never print webhook URLs.
+            local clean=tostring(cause)
+                :gsub("https://discord%.com/api/webhooks/%d+/[%w_%-]+","[WEBHOOK_DA_AN]")
+                :gsub("https://discordapp%.com/api/webhooks/%d+/[%w_%-]+","[WEBHOOK_DA_AN]")
+            local trace=clean
+            if type(debug)=="table" and type(debug.traceback)=="function" then
+                local traceOk,details=pcall(debug.traceback,clean,2)
+                if traceOk and details then trace=tostring(details) end
+            end
+            return "BUOC ["..step.."] "..trace
         end)
         if not ok then
-            status("❌ LỖI BÁO CÁO: "..tostring(err):sub(1,115),false)
-            warn("[TC V4.13.2 REPORT]",err)
+            local brief=tostring(err):match("^[^\n]+") or tostring(err)
+            status("❌ ACC V4.13.3 "..brief:sub(1,170),false)
+            notice("ACC LỖI – V4.13.3",brief:sub(1,185))
+            warn("[TC V4.13.3 REPORT ERROR - COPY F9] ",err)
         end
         reportBusy=false
     end)
@@ -11276,7 +11305,7 @@ end))
 
 -- ===================== TRUONG CODER V4.9 ACCOUNT REPORT UI =====================
 local accPage=pages.ACC
-addLabel(accPage,"👑 ACC V4.13.2 • FIX TỰ GỬI • GITHUB ONLY",31,15,T.cyan)
+addLabel(accPage,"👑 ACC V4.13.3 • FIX LỖI STRING • GITHUB ONLY",31,15,T.cyan)
 addLabel(accPage,"Bản V4.13: chỉ cần GitHub + webhook. Báo cáo kiểu RealKid với nhiều khung màu, ảnh trái nhỏ ở góc phải nếu có nguồn; KHÔNG cần PC bot.",85,11,T.muted)
 toggle(accPage,"TỰ ĐỘNG GỬI BÁO CÁO DISCORD", "autoAccountReport")
 toggle(accPage,"KÈM ẢNH TRÁI + VÕ THẬT (NẾU CÓ)", "accountReportImages")
@@ -11298,7 +11327,7 @@ on(intervalInput.FocusLost:Connect(function()
     end
     intervalInput.Text=tostring(S.accountReportMinutes)
 end))
-local reportNowButton=addButton(accPage,"📤 GỬI THỬ BÁO CÁO ACC V4.13.2",color(23,127,152))
+local reportNowButton=addButton(accPage,"📤 GỬI THỬ BÁO CÁO ACC V4.13.3",color(23,127,152))
 on(reportNowButton.MouseButton1Click:Connect(function()
     local n=tonumber(intervalInput.Text)
     if n then S.accountReportMinutes=math.clamp(math.floor(n+0.5),5,180) end
