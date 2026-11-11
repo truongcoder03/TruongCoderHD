@@ -1,5 +1,5 @@
 --[[
- TRUONG CODER HD | V4.8 - FRUIT NOTIFY FIX + V4.3 FEATURES
+ TRUONG CODER HD | V4.9 - ACCOUNT REPORT + FRUIT NOTIFY FIX
  Discord island + confirmed inventory change + new-fruit alerts (with images), 4 ESP tags, Speed/Jump, Noclip, NPC Auto Attack & Water Walk.
  Your photo is embedded in this single file as a local GUI logo.
  No Auto Quest/Teleport/Fly/Auto Levi. Attack only targets nearby NPCs.
@@ -51,6 +51,9 @@ local S = {
     autoDiscord = true,
     autoFruitDiscord = true, -- Thong bao khi so luong trai trong kho tang
     autoFoundFruitDiscord = true, -- Mac dinh BAT: bao khi trai moi vao balo
+    autoAccountReport = false, -- Chi bat khi chu tai khoan cho phep gui Discord
+    accountReportMinutes = 30, -- 5-180 phut
+    accountReportImages = true, -- Gui anh trai/kiem/sung neu co link anh that
     fruitMentionEveryone = false,
     webhook = "",
     robloxLogoId = "",
@@ -159,6 +162,7 @@ local function loadConfig()
     S.jumpPower = math.clamp(math.floor(S.jumpPower + 0.5), 50, 200)
     S.attackRange = math.clamp(math.floor(S.attackRange + 0.5), 8, 55)
     S.attackDelayMs = math.clamp(math.floor(S.attackDelayMs / 50 + 0.5) * 50, 200, 1500)
+    S.accountReportMinutes = math.clamp(math.floor(S.accountReportMinutes + 0.5), 5, 180)
     if S.attackMode ~= "Auto" and S.attackMode ~= "Melee" and S.attackMode ~= "Sword" and S.attackMode ~= "Gun" then
         S.attackMode = "Auto"
     end
@@ -10116,6 +10120,411 @@ local function sendDiscord(eventId,pos,isTest)
     end)
 end
 
+-- ================================================================
+-- TRUONG CODER HD V4.9 | TAI KHOAN / INVENTORY REPORT (OPT-IN)
+-- Read-only: never buys, stores, equips, or transfers any item.
+-- Shares account snapshot only to the Discord webhook entered by user.
+-- ================================================================
+local REPORT_COLORS = {main=0x56DFFA, items=0x8B5CF6, fruits=0xEFAE55, image=0x38D5B6}
+local ACCOUNT_CATEGORIES = {"TRÁI TRONG KHO", "TRÁI ĐANG CẦM", "KIẾM", "SÚNG", "VÕ", "PHỤ KIỆN", "NGUYÊN LIỆU", "TRANG BỊ / KHÁC"}
+local KNOWN_STYLES = {}
+for _,name in ipairs({"Combat","Dark Step","Electric","Water Kung Fu","Dragon Breath","Superhuman","Death Step","Sharkman Karate","Electric Claw","Dragon Talon","Godhuman","Sanguine Art","Divine Art","Fishman Karate"}) do
+    KNOWN_STYLES[normalize(name)]=true
+end
+local KNOWN_SWORDS = {}
+for _,name in ipairs({"Cutlass","Katana","Dual Katana","Triple Katana","Iron Mace","Shark Saw","Twin Hooks","Dragon Trident","Dual-Headed Blade","Flail","Gravity Blade","Longsword","Pipe","Soul Cane","Trident","Wardens Sword","Bisento","Buddy Sword","Canvander","Dark Dagger","Dragonheart","Fox Lamp","Koko","Midnight Blade","Oroshi","Pole (1st Form)","Pole (2nd Form)","Rengoku","Saber","Saishi","Shark Anchor","Shizu","Spikey Trident","Tushita","Yama","Cursed Dual Katana","Dark Blade","Dog Blade","Hallow Scythe","Triple Dark Blade","True Triple Katana","Fishing Trophy","Jitte","Wando","Saddi","Shisui","Rengoku","Pole"}) do
+    KNOWN_SWORDS[normalize(name)]=true
+end
+local KNOWN_GUNS = {}
+for _,name in ipairs({"Slingshot","Refined Slingshot","Flintlock","Refined Flintlock","Musket","Refined Musket","Cannon","Bazooka","Kabucha","Acidum Rifle","Bizarre Rifle","Serpent Bow","Venom Bow","Soul Guitar","Skull Guitar","Dragonstorm","Magma Blaster","Burning Blaster"}) do
+    KNOWN_GUNS[normalize(name)]=true
+end
+
+local function reportPlain(value)
+    local s=tostring(value or "?")
+    s=s:gsub("[\r\n]"," "):gsub("[<>@`]", "")
+    return s:sub(1,110)
+end
+local function reportFmt(v)
+    if v==nil then return "Chưa đọc được" end
+    local n=tonumber(v)
+    if not n then return reportPlain(v) end
+    local sign=n<0 and "-" or ""
+    local s=tostring(math.floor(math.abs(n)))
+    return sign..s:reverse():gsub("(%d%d%d)","%1."):reverse():gsub("^%.","")
+end
+local function reportFind(names)
+    for _,folder in ipairs({LocalPlayer:FindFirstChild("Data"),LocalPlayer:FindFirstChild("leaderstats"),LocalPlayer}) do
+        if folder then
+            for _,key in ipairs(names) do
+                local obj=folder:FindFirstChild(key)
+                if obj and obj:IsA("ValueBase") then return obj.Value end
+                local value=folder:GetAttribute(key)
+                if value~=nil then return value end
+            end
+        end
+    end
+    return nil
+end
+local function reportGroup(name, itemType)
+    local kind=normalize(itemType or "")
+    local nm=normalize(name or "")
+    if kind:find("fruit",1,true) or fruitInfo(name) then return "TRÁI TRONG KHO" end
+    if kind:find("sword",1,true) or KNOWN_SWORDS[nm] then return "KIẾM" end
+    if kind:find("gun",1,true) or kind:find("ranged",1,true) or KNOWN_GUNS[nm] then return "SÚNG" end
+    if kind:find("melee",1,true) or kind:find("fighting",1,true) or KNOWN_STYLES[nm] then return "VÕ" end
+    if kind:find("accessor",1,true) or kind:find("trinket",1,true) then return "PHỤ KIỆN" end
+    if kind:find("material",1,true) or kind:find("fish",1,true) or kind:find("usable",1,true) then return "NGUYÊN LIỆU" end
+    return "TRANG BỊ / KHÁC"
+end
+local function reportGetAssetId(texture)
+    if type(texture)~="string" then return nil end
+    local id=texture:match("[?&]id=(%d+)") or texture:match("rbxassetid://(%d+)")
+        or texture:match("^%d+$")
+    if id and #id<=19 then return id end
+    return nil
+end
+local function reportGetImageFromTable(item)
+    if type(item)~="table" then return nil end
+    for _,key in ipairs({"Image","ImageUrl","imageUrl","IconUrl","Icon","TextureId","Texture","AssetId","IconId"}) do
+        local value=item[key]
+        if type(value)=="string" and value:match("^https://") and not value:find("discord.com/api/webhooks",1,true) then
+            return value
+        end
+        if value~=nil then
+            local id=reportGetAssetId(tostring(value))
+            if id then return {asset=id} end
+        end
+    end
+    return nil
+end
+local ACCOUNT_REMOTE_PENDING={}
+local function reportMakeSnapshot()
+    local profile={
+        name=reportPlain(LocalPlayer.Name), displayName=reportPlain(LocalPlayer.DisplayName),
+        userId=LocalPlayer.UserId, level=reportFind({"Level","Lv"}),
+        beli=reportFind({"Beli","Money","Cash"}),
+        fragments=reportFind({"Fragments","Fragment"}),
+        race=reportFind({"Race","race"}),
+        fruit=reportFind({"DevilFruit","BloxFruit","Fruit"}),
+        bounty=reportFind({"Bounty","Honor"}),
+        statPoints=reportFind({"Points","StatPoints"}),
+        sea=seaName(), placeId=game.PlaceId, jobId=tostring(game.JobId),
+    }
+    local result={profile=profile, groups={}, statuses={}, unique={}, images={}}
+    for _,cat in ipairs(ACCOUNT_CATEGORIES) do result.groups[cat]={} end
+    local function add(cat, name, qty, mastery, imageData)
+        name=reportPlain(name)
+        if name=="?" or name=="" then return end
+        cat=result.groups[cat] and cat or "TRANG BỊ / KHÁC"
+        local key=cat..":"..normalize(name)
+        if not result.unique[key] then
+            local entry={category=cat,name=name,count=math.max(1,math.floor(tonumber(qty) or 1)),mastery=tonumber(mastery),image=imageData}
+            result.unique[key]=entry
+            table.insert(result.groups[cat],entry)
+        else
+            local entry=result.unique[key]
+            entry.count=math.max(entry.count,math.max(1,math.floor(tonumber(qty) or 1)))
+            entry.mastery=math.max(entry.mastery or 0,tonumber(mastery) or 0)
+            entry.image=entry.image or imageData
+        end
+    end
+    -- Readable data first. Inventory endpoints may be unavailable on game updates.
+    local function safeRemote(method)
+        local remotes=game:GetService("ReplicatedStorage"):FindFirstChild("Remotes")
+        local comm=remotes and remotes:FindFirstChild("CommF_")
+        if not comm or not comm:IsA("RemoteFunction") then return nil,"Không tìm thấy RemoteFunction" end
+        -- Limit waiting from this report. Never start a second copy of a hung call.
+        if ACCOUNT_REMOTE_PENDING[method] then return nil,"Yêu cầu trước chưa hoàn tất" end
+        ACCOUNT_REMOTE_PENDING[method]=true
+        local state={finished=false,data=nil,reason="Không có dữ liệu"}
+        task.spawn(function()
+            local ok,output=pcall(function() return comm:InvokeServer(method) end)
+            if ok and type(output)=="table" then state.data=output; state.reason=nil
+            else state.reason=ok and ("Máy chủ trả về "..typeof(output)) or tostring(output):sub(1,120) end
+            state.finished=true
+            ACCOUNT_REMOTE_PENDING[method]=nil
+        end)
+        local started=os.clock()
+        while running and not state.finished and os.clock()-started<8 do task.wait(.12) end
+        if not state.finished then return nil,"Quá 8 giây (game không phản hồi)" end
+        return state.data,state.reason
+    end
+    local equipment,errEquip=safeRemote("getInventory")
+    result.statuses.equipment=equipment and "Đã đọc" or ("Không đọc được: "..reportPlain(errEquip))
+    if equipment then
+        local visited=0
+        for _,item in pairs(equipment) do
+            visited=visited+1
+            if visited>1200 then break end
+            if type(item)=="table" then
+                local nm=item.Name or item.name or item.ItemName or item.Item
+                if type(nm)=="string" and nm~="" then
+                    local category=reportGroup(nm,item.Type or item.Category or item.ItemType)
+                    add(category,nm,item.Count or item.Quantity or item.Amount,
+                        item.Mastery or item.Level,reportGetImageFromTable(item))
+                end
+            end
+        end
+    end
+    local stored,errFruit=safeRemote("getInventoryFruits")
+    result.statuses.fruits=stored and "Đã đọc" or ("Không đọc được: "..reportPlain(errFruit))
+    if stored then
+        local visited=0
+        for _,item in pairs(stored) do
+            visited=visited+1
+            if visited>1200 then break end
+            if type(item)=="table" then
+                local nm=item.Name or item.name
+                if type(nm)=="string" then
+                    add("TRÁI TRONG KHO",nm,item.Count or item.Quantity or item.Amount,nil,reportGetImageFromTable(item))
+                end
+            end
+        end
+    end
+    -- The physical Backpack + Character are a separate reliable fallback.
+    local foundTools=0
+    local activeContainers={}
+    local bp=LocalPlayer:FindFirstChildOfClass("Backpack")
+    if bp then table.insert(activeContainers,bp) end
+    if LocalPlayer.Character then table.insert(activeContainers,LocalPlayer.Character) end
+    for _,parent in ipairs(activeContainers) do
+        if parent then
+            for _,tool in ipairs(parent:GetChildren()) do
+                if tool:IsA("Tool") then
+                    foundTools=foundTools+1
+                    local cat=reportGroup(tool.Name,tool.ToolTip)
+                    if fruitInfo(tool.Name) then cat="TRÁI ĐANG CẦM" end
+                    local mastery=tool:FindFirstChild("Level") or tool:FindFirstChild("Mastery")
+                    local mv=(mastery and mastery:IsA("ValueBase")) and mastery.Value or nil
+                    local img=reportGetAssetId(tool.TextureId)
+                    add(cat,tool.Name,1,mv,img and {asset=img} or nil)
+                end
+            end
+        end
+    end
+    result.statuses.backpack=foundTools.." công cụ đang thấy trong balô/nhân vật"
+    for _,cat in ipairs(ACCOUNT_CATEGORIES) do
+        table.sort(result.groups[cat],function(a,b) return a.name:lower()<b.name:lower() end)
+    end
+    return result
+end
+local REPORT_IMAGE_CACHE={}
+local function reportHttpGetJson(url)
+    local req=discordRequest()
+    if not req then return nil end
+    local ok,res=pcall(function() return req({Url=url,Method="GET",Headers={Accept="application/json"}}) end)
+    if not ok or not res or not res.Body then return nil end
+    if tonumber(res.StatusCode or res.Status)~=200 then return nil end
+    local parsedOk,body=pcall(function() return HttpService:JSONDecode(res.Body) end)
+    return parsedOk and body or nil
+end
+local function reportAssetUrl(assetId)
+    if not assetId then return nil end
+    if REPORT_IMAGE_CACHE[assetId]~=nil then
+        return REPORT_IMAGE_CACHE[assetId] or nil
+    end
+    local result=reportHttpGetJson("https://thumbnails.roblox.com/v1/assets?assetIds="..assetId.."&size=420x420&format=Png&isCircular=false")
+    local entry=result and result.data and result.data[1]
+    local imageUrl=entry and entry.imageUrl
+    REPORT_IMAGE_CACHE[assetId]=imageUrl or false
+    return imageUrl
+end
+local function reportItemUrl(item)
+    if item.category=="TRÁI TRONG KHO" or item.category=="TRÁI ĐANG CẦM" then
+        local base,disp=fruitInfo(item.name)
+        if base then return fruitImage(base,disp) end
+    end
+    if type(item.image)=="string" and item.image:match("^https://") then return item.image end
+    if type(item.image)=="table" and item.image.asset then
+        local official=reportAssetUrl(item.image.asset)
+        if official then return official end
+    end
+    -- Real Blox Fruits weapon art (not generic emoji). Missing art is allowed
+    -- to fail silently on Discord; all item names remain in the attached list.
+    local key=normalize(item.name)
+    if item.category=="KIẾM" or item.category=="SÚNG" then
+        if KNOWN_SWORDS[key] or KNOWN_GUNS[key] then
+            local slug=item.name:lower():gsub("[^a-z0-9]+","-"):gsub("^%-",""):gsub("%-$","")
+            if slug~="" then
+                return "https://bloxfruitsdatabase.com/item-images/"..slug..".webp"
+            end
+        end
+    end
+    return nil
+end
+local function reportAvatarUrl(userId)
+    local url="https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds="..tostring(userId).."&size=420x420&format=Png&isCircular=false"
+    local data=reportHttpGetJson(url)
+    return data and data.data and data.data[1] and data.data[1].imageUrl or nil
+end
+local function reportLines(snapshot)
+    local all={}
+    for _,cat in ipairs(ACCOUNT_CATEGORIES) do
+        local list=snapshot.groups[cat]
+        table.insert(all,"\n===== "..cat.." ("..#list..") =====")
+        if #list==0 then table.insert(all,"(Không thấy món nào từ dữ liệu hiện đọc được)") end
+        for _,item in ipairs(list) do
+            local m=item.mastery and item.mastery>0 and (" | Thông thạo: "..math.floor(item.mastery)) or ""
+            table.insert(all,"- "..item.name.." x"..item.count..m)
+        end
+    end
+    local p=snapshot.profile
+    local header={
+        "TRUONG CODER - DANH SACH TAI KHOAN BLOX FRUITS",
+        "Nguoi cho phep bao cao: @"..p.name.." | User ID: "..tostring(p.userId),
+        "Level: "..reportFmt(p.level).." | Beli: "..reportFmt(p.beli).." | Fragments: "..reportFmt(p.fragments),
+        "Toc: "..reportPlain(p.race).." | Trai dang su dung: "..reportPlain(p.fruit),
+        "SEA: "..p.sea.." | Place: "..p.placeId,
+        "Doc kho trang bi: "..snapshot.statuses.equipment,
+        "Doc kho trai: "..snapshot.statuses.fruits,
+        "Balô: "..snapshot.statuses.backpack,
+        "LUU Y: CHI LIET KE CAC MON GAME CHO PHEP DOC. KHONG THAY != KHONG SO HUU.",
+    }
+    for _,line in ipairs(all) do table.insert(header,line) end
+    return table.concat(header,"\n")
+end
+local function reportPost(payload,txtname,txtcontent)
+    local req=discordRequest()
+    if not req then return false,"Executor không hỗ trợ HTTP request" end
+    local requestData={Url=S.webhook,Method="POST",Headers={},Body=""}
+    if txtcontent then
+        local boundary="----TCAccountReport"..tostring(math.floor(os.clock()*100000))
+        requestData.Headers["Content-Type"]="multipart/form-data; boundary="..boundary
+        local cleanName=(txtname or "inventory.txt"):gsub("[^a-zA-Z0-9_.-]","_")
+        requestData.Body=table.concat({
+            "--",boundary,"\r\nContent-Disposition: form-data; name=\"payload_json\"\r\nContent-Type: application/json\r\n\r\n",
+            HttpService:JSONEncode(payload),"\r\n",
+            "--",boundary,"\r\nContent-Disposition: form-data; name=\"files[0]\"; filename=\"",cleanName,"\"\r\n",
+            "Content-Type: text/plain; charset=utf-8\r\n\r\n",txtcontent,"\r\n",
+            "--",boundary,"--\r\n"
+        })
+    else
+        requestData.Headers["Content-Type"]="application/json"
+        requestData.Body=HttpService:JSONEncode(payload)
+    end
+    local ok,res=pcall(function() return req(requestData) end)
+    if not ok then return false,tostring(res) end
+    local code=tonumber(res and (res.StatusCode or res.Status)) or 0
+    if code>=200 and code<300 then return true,nil end
+    if code==429 then
+        return false,"HTTP 429: Discord giới hạn gửi tin, thử tăng số phút"
+    end
+    return false,"HTTP "..code..": "..tostring(res and res.Body or "Không phản hồi"):sub(1,130)
+end
+local reportBusy=false
+local lastAccountReportAt=0
+local function sendAccountReport(isManual)
+    if reportBusy then status("Dang gui bao cao tai khoan, anh doi hoan thanh",false); return end
+    if not validWebhook(S.webhook) then
+        status("Chua co Webhook! Vao muc WEBHOOK de luu",false)
+        return
+    end
+    if not discordRequest() then status("Executor khong ho tro HTTP - khong gui duoc Discord",false); return end
+    if isManual and os.clock()-lastAccountReportAt<60 then
+        status("Moi lan gui thu cach nhau it nhat 60 giay",false); return
+    end
+    reportBusy=true
+    lastAccountReportAt=os.clock()
+    task.spawn(function()
+        local ok,err=pcall(function()
+            status("Dang doc tai khoan + kiem tra kho...",true)
+            local snapshot=reportMakeSnapshot()
+            if not running then return end
+            local profile=snapshot.profile
+            local url=reportAvatarUrl(profile.userId)
+            local total=0
+            local fields={
+                {name="🎮 ROBLOX",value="**"..profile.displayName.."** (`@"..profile.name.."`)\nUser ID: `"..profile.userId.."`",inline=false},
+                {name="⚡ LEVEL",value="**"..reportFmt(profile.level).."**",inline=true},
+                {name="💵 BELI",value="**"..reportFmt(profile.beli).."**",inline=true},
+                {name="💎 FRAGMENTS",value="**"..reportFmt(profile.fragments).."**",inline=true},
+                {name="🐉 TỘC",value="**"..reportPlain(profile.race).."**",inline=true},
+                {name="🍈 TRÁI ĐANG DÙNG",value="**"..reportPlain(profile.fruit).."**",inline=true},
+                {name="🌀 SEA",value="**"..profile.sea.."**",inline=true},
+                {name="🏆 BOUNTY/HONOR",value="**"..reportFmt(profile.bounty).."**",inline=true},
+                {name="📈 ĐIỂM STATS",value="**"..reportFmt(profile.statPoints).."**",inline=true},
+                {name="🔍 QUYỀN ĐỌC KHO",value="Trang bị: "..snapshot.statuses.equipment.."\nTrái cất: "..snapshot.statuses.fruits.."\nBalô: "..snapshot.statuses.backpack,inline=false},
+            }
+            for _,cat in ipairs(ACCOUNT_CATEGORIES) do
+                local n=#snapshot.groups[cat]
+                total=total+n
+                table.insert(fields,{name=cat,value=tostring(n).." loại tìm thấy",inline=true})
+            end
+            local embed={
+                title="👑  TRUONG CODER  |  BÁO CÁO TÀI KHOẢN",
+                description="**⚔️ BLOX FRUITS • PLAYER PROFILE**\n━━━━━━━━━━━━━━━━━━━━\n"..
+                    "📋 Tự động thống kê vật phẩm mà game đang cho phép đọc.\n"..
+                    "📁 **Danh sách đầy đủ:** xem file `.txt` đính kèm.\n"..
+                    "🖼️ Ảnh thật được gửi ở các tin tiếp theo khi có nguồn ảnh.\n"..
+                    "⏱️ Chu kỳ: **"..S.accountReportMinutes.." phút**\n"..
+                    "*Không đọc được không có nghĩa là tài khoản không có món đó.*",
+                color=REPORT_COLORS.main,fields=fields,
+                footer={text="TRUONG CODER HD V4.9 • Tài khoản tự nguyện gửi báo cáo • "..total.." loại được nhận diện"},
+                timestamp=os.date("!%Y-%m-%dT%H:%M:%SZ")
+            }
+            if url then embed.thumbnail={url=url} end
+            local doc=reportLines(snapshot)
+            local filename="TC_ACCOUNT_"..profile.name..".txt"
+            local success,why=reportPost({username="TRUONG CODER | ACCOUNT STATUS",allowed_mentions={parse={}},embeds={embed}},filename,doc)
+            if not success then
+                status("GUI BAO CAO THAT BAI: "..tostring(why):sub(1,100),false)
+                warn("[TC REPORT]",why)
+                return
+            end
+            local imageItems={}
+            for _,cat in ipairs(ACCOUNT_CATEGORIES) do
+                for _,item in ipairs(snapshot.groups[cat]) do
+                    if #imageItems>=140 then break end
+                    if item.category=="TRÁI TRONG KHO" or item.category=="TRÁI ĐANG CẦM" or item.category=="KIẾM" or item.category=="SÚNG" or item.image then
+                        table.insert(imageItems,item)
+                    end
+                end
+            end
+            local sentImage=0
+            local part={}
+            local function flush()
+                if #part==0 then return true end
+                task.wait(1.7)
+                local passed,reason=reportPost({username="TRUONG CODER | ITEM GALLERY",allowed_mentions={parse={}},embeds=part})
+                part={}
+                if not passed then
+                    warn("[TC REPORT IMAGES]",reason)
+                    return false
+                end
+                return true
+            end
+            if S.accountReportImages then
+                for _,item in ipairs(imageItems) do
+                    if not running then break end
+                    local img=reportItemUrl(item)
+                    if img and img:match("^https://") then
+                        local imageEmbed={
+                            title="「 "..item.category.." 」  "..item.name,
+                            description="**"..item.name.."**"..(item.count>1 and ("  ×"..item.count) or "")..
+                                (item.mastery and item.mastery>0 and ("  •  Mastery "..math.floor(item.mastery)) or ""),
+                            color=item.category:find("TRÁI",1,true) and REPORT_COLORS.fruits or REPORT_COLORS.image,
+                            image={url=img},
+                            footer={text="Ảnh vật phẩm / ảnh game; nguồn bên ngoài có thể không tải được"}
+                        }
+                        table.insert(part,imageEmbed)
+                        sentImage=sentImage+1
+                        if #part==4 then if not flush() then break end end
+                    end
+                end
+                if #part>0 then flush() end
+            end
+            status("DA GUI BAO CAO: "..total.." mon; "..sentImage.." anh co link",true)
+        end)
+        if not ok then
+            status("Loi bao cao: "..tostring(err):sub(1,110),false)
+            warn("[TC ACCOUNT]",err)
+        end
+        reportBusy=false
+    end)
+end
+
+
 screen=create("ScreenGui",PlayerGui,{
     Name=GUI_NAME,
     ResetOnSpawn=false,
@@ -10196,7 +10605,7 @@ avatar.Position=UDim2.fromOffset(13,11)
 local title=label(header,"TRUONG CODER",20,T.cyan)
 title.Position=UDim2.fromOffset(78,11)
 title.Size=UDim2.fromOffset(356,29)
-local subtitle=label(header,"SEA WATCH  •  FRUIT  •  FARM  •  V4.5",11,T.muted)
+local subtitle=label(header,"SEA WATCH  •  ACCOUNT REPORT  •  V4.9",11,T.muted)
 subtitle.Position=UDim2.fromOffset(79,39)
 subtitle.Size=UDim2.fromOffset(356,20)
 local collapse=button(header,"−",T.surface3)
@@ -10217,10 +10626,10 @@ local bar=corners(create("Frame",hub,{
 local pages={}
 local nav={}
 local toggleSetters={}
-for index,id in ipairs({"ESP","MOVE","FARM","ISLANDS","WEBHOOK","SETTINGS"}) do
+for index,id in ipairs({"ESP","MOVE","FARM","ISLANDS","WEBHOOK","ACC","SETTINGS"}) do
     local b=button(bar,id)
-    b.Size=UDim2.fromOffset(123,42)
-    b.Position=UDim2.fromOffset(7,8+(index-1)*50)
+    b.Size=UDim2.fromOffset(123,36)
+    b.Position=UDim2.fromOffset(7,8+(index-1)*43)
     nav[id]=b
     local page=corners(create("ScrollingFrame",hub,{
         Name=id,
@@ -10586,6 +10995,41 @@ on(clearHook.MouseButton1Click:Connect(function()
     saveConfig(true)
 end))
 
+
+-- ===================== TRUONG CODER V4.9 ACCOUNT REPORT UI =====================
+local accPage=pages.ACC
+addLabel(accPage,"👑 BÁO CÁO TÀI KHOẢN BLOX FRUITS",31,15,T.cyan)
+addLabel(accPage,"Gửi Level, Beli, Fragment, tộc, trái, kiếm, súng, võ, phụ kiện, nguyên liệu lên webhook Discord. Đồ chưa đọc được sẽ ghi rõ. Không lấy thông tin đăng nhập.",85,11,T.muted)
+toggle(accPage,"TỰ ĐỘNG GỬI BÁO CÁO DISCORD", "autoAccountReport")
+toggle(accPage,"KÈM ẢNH VẬT PHẨM THẬT (NẾU CÓ)", "accountReportImages")
+addLabel(accPage,"⏱️ SỐ PHÚT GỬI 1 LẦN (5-180):",27,13,T.yellow)
+local intervalInput=corners(create("TextBox",accPage,{
+    Size=UDim2.new(1,0,0,42),BackgroundColor3=T.surface2,BorderSizePixel=0,
+    Text=tostring(S.accountReportMinutes),PlaceholderText="30",
+    TextColor3=T.text,PlaceholderColor3=T.muted,
+    Font=Enum.Font.GothamBold,TextSize=18,ClearTextOnFocus=false
+}),8)
+on(intervalInput.FocusLost:Connect(function()
+    local n=tonumber(intervalInput.Text)
+    if n then
+        S.accountReportMinutes=math.clamp(math.floor(n+0.5),5,180)
+        saveConfig(true)
+    else
+        status("Hay nhap so phut tu 5 den 180",false)
+    end
+    intervalInput.Text=tostring(S.accountReportMinutes)
+end))
+local reportNowButton=addButton(accPage,"📤 GỬI BÁO CÁO TÀI KHOẢN NGAY",color(23,127,152))
+on(reportNowButton.MouseButton1Click:Connect(function()
+    local n=tonumber(intervalInput.Text)
+    if n then S.accountReportMinutes=math.clamp(math.floor(n+0.5),5,180) end
+    intervalInput.Text=tostring(S.accountReportMinutes)
+    saveConfig(false)
+    sendAccountReport(true)
+end))
+addLabel(accPage,"🔒 Chỉ gửi khi anh tự bật hoặc nhấn nút. Webhook phải được lưu ở tab WEBHOOK; không bao giờ đưa webhook lên GitHub công khai.",67,11,T.muted)
+addLabel(accPage,"📁 Tin đầu có hồ sơ + file TXT liệt kê toàn bộ món đọc được. Sau đó là bộ ảnh vật phẩm thật từ nguồn game/wiki; ảnh không tìm được sẽ KHÔNG thay bằng icon giả.",75,11,T.mint)
+addLabel(accPage,"🛑 Chỉ chạy khi đang mở game, có executor HTTP. Nếu game khóa dữ liệu kho, không thể bảo đảm đọc đủ đồ, võ đã mở khóa hoặc gửi ảnh tất cả món.",71,11,T.yellow)
 
 -- NPC-only Auto Attack, not player-vs-player. One current target, no teleport.
 local farmPage = pages.FARM
@@ -11274,6 +11718,19 @@ bindCamera()
 -- Watch new physical fruit tools; the island radar is left unchanged.
 task.spawn(startFruitWatch)
 task.spawn(startStoredFruitWatch)
+-- Auto account report: first send when enabled, then once per selected interval.
+task.spawn(function()
+    while running do
+        task.wait(5)
+        if not running then break end
+        if S.autoAccountReport and validWebhook(S.webhook) and discordRequest() and not reportBusy then
+            local every=math.clamp(tonumber(S.accountReportMinutes) or 30,5,180)*60
+            if lastAccountReportAt==0 or os.clock()-lastAccountReportAt>=every then
+                sendAccountReport(false)
+            end
+        end
+    end
+end)
 
 -- We don't spam remote requests: only first sighting for each event per session.
 task.spawn(function()
@@ -11312,4 +11769,4 @@ task.spawn(function()
 end)
 
 tab("ESP")
-print("TRUONG CODER HD V4.7 + TRUE LARGE FRUIT IMAGE + STORED FRUIT + V4.3 FEATURES started; saved config loaded:",wasLoaded)
+print("TRUONG CODER HD V4.9 ACCOUNT REPORT + FRUIT NOTIFY FIX started; saved config loaded:",wasLoaded)
