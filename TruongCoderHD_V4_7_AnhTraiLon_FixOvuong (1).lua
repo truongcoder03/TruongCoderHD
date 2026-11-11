@@ -1,5 +1,5 @@
 --[[
- TRUONG CODER HD | V4.13.1 - FIX MENU NOT LOADING
+ TRUONG CODER HD | V4.13.4 - FIX ACC ERROR / FAILSAFE
  Discord island + opt-in account summary + Melee watch (real fruit thumbnails), 4 ESP tags, Speed/Jump, Noclip, NPC Auto Attack & Water Walk.
  Your photo is embedded in this single file as a local GUI logo.
  No Auto Quest/Teleport/Fly/Auto Levi. Attack only targets nearby NPCs.
@@ -10319,8 +10319,8 @@ local function reportMakeSnapshot()
             ACCOUNT_REMOTE_PENDING[method]=nil
         end)
         local started=os.clock()
-        while running and not state.finished and os.clock()-started<8 do task.wait(.12) end
-        if not state.finished then return nil,"Quá 8 giây (game không phản hồi)" end
+        while running and not state.finished and os.clock()-started<5 do task.wait(.12) end
+        if not state.finished then return nil,"Quá 5 giây (game không phản hồi)" end
         return state.data,state.reason
     end
     local equipment,errEquip=safeRemote("getInventory")
@@ -10599,146 +10599,167 @@ local function reportCurrentFruitMastery(p)
     end
     return nil
 end
+-- V4.13.4: isolated, fail-safe ACC report. A broken inventory API, data type,
+-- image resolver or HTTP encoder must not crash the rest of the hub.
 sendAccountReport = function(isManual)
-    if reportBusy then status("Đang gửi ACC V4.13",false);return end
-    if not validWebhook(S.webhook) then status("Chưa lưu webhook trong tab WEBHOOK",false);return end
-    if not discordRequest() then status("Công cụ hiện tại không hỗ trợ HTTP POST",false);return end
-    if isManual and lastAccountReportAt.attempt>0 and os.clock()-lastAccountReportAt.attempt<45 then
-        status("Gửi thử tối đa 1 lần / 45 giây. Xin thử lại sau.",false);return
+    if reportBusy then
+        status("ACC đang kiểm tra, không gửi chồng lên nhau.",false)
+        return
+    end
+    if not validWebhook(S.webhook) then
+        status("ACC: Hãy dán và lưu Discord webhook trong tab WEBHOOK.",false)
+        return
+    end
+    if not discordRequest() then
+        status("ACC: Công cụ này không hỗ trợ gửi HTTP tới Discord.",false)
+        return
+    end
+    local now=os.clock()
+    if isManual and lastAccountReportAt.attempt>0 and now-lastAccountReportAt.attempt<45 then
+        status("ACC: Vui lòng chờ đủ 45 giây giữa các lần gửi thử.",false)
+        return
     end
     reportBusy=true
-    lastAccountReportAt.attempt=os.clock()
+    lastAccountReportAt.attempt=now
     task.spawn(function()
-        local step="khởi tạo"
-        local ok,err=xpcall(function()
-            status("Đang đọc ACC V4.13.3 (chỉ dữ liệu game cho phép)...",true)
-            step="đọc dữ liệu Roblox / kho"
-            local snap=reportMakeSnapshot()
-            if not running then return end
-            if type(snap)~="table" or type(snap.groups)~="table" or type(snap.profile)~="table" then
-                error("Dữ liệu tài khoản không hợp lệ: "..typeof(snap))
+        local function safeText(x,maxLength)
+            local ok,v=pcall(tostring,x)
+            local str=(ok and type(v)=="string") and v or "Chưa đọc được"
+            str=str:gsub("@everyone","@ everyone"):gsub("@here","@ here")
+            str=str:gsub("[\r\n]"," "):gsub("[<>]","")
+            maxLength=tonumber(maxLength) or 100
+            if #str>maxLength then str=str:sub(1,maxLength-3).."..." end
+            if str=="" or str=="nil" then return "Chưa đọc được" end
+            return str
+        end
+        local function tryValue(fn,default)
+            local ok,result=pcall(fn)
+            return (ok and result~=nil) and result or default
+        end
+        local function safeNumber(v)
+            local ok,x=pcall(reportFmt,v)
+            return ok and safeText(x,75) or "Chưa đọc được"
+        end
+        local function safeList(list,limit)
+            if type(list)~="table" then return "*Chưa đọc được danh sách.*" end
+            local lines={}
+            local n=0
+            for _,item in ipairs(list) do
+                if n>=limit then break end
+                local title=type(item)=="table" and (item.name or item.Name) or item
+                local mastery=type(item)=="table" and tonumber(item.mastery) or nil
+                n=n+1
+                local row="• **"..safeText(title,70).."**"
+                if mastery and mastery>0 and mastery<100000 then
+                    row=row.." • Mastery "..math.floor(mastery)
+                end
+                lines[#lines+1]=row
             end
-            step="chuẩn bị danh sách vật phẩm"
-            local p=snap.profile
-            local fruits=type(snap.groups["TRÁI TRONG KHO"])=="table" and snap.groups["TRÁI TRONG KHO"] or {}
-            local held=type(snap.groups["TRÁI ĐANG CẦM"])=="table" and snap.groups["TRÁI ĐANG CẦM"] or {}
-            local melee=type(snap.groups["VÕ"])=="table" and snap.groups["VÕ"] or {}
-            local eqStatus=tostring(snap.statuses.equipment or "Chưa đọc được")
-            local fruitStatus=tostring(snap.statuses.fruits or "Chưa đọc được")
-            local fullFruit=fruitStatus:find("Đã đọc từ máy chủ",1,true)~=nil
-            local itemMastery=reportCurrentFruitMastery(p)
-            local fruitText=reportSafeText(p.fruit,65)
-            if itemMastery and itemMastery>0 then
-                fruitText=fruitText.."  •  Mastery "..math.floor(itemMastery)
-            end
-            step="tạo thông tin và khung màu"
-            local embeds={}
-            -- Card 1: profile + avatar. Purple premium heading.
-            local profile={
-                author={name="TRUONG CODER • BLOX FRUITS ACCOUNT TRACKER"},
-                title="👑 BÁO CÁO TÀI KHOẢN • V4.13.3",
-                description="**Theo dõi phiên chơi**\n"..
-                    "👤 **Tài khoản:** `@"..reportSafeText(p.name,65).."`\n"..
-                    "✨ **Nhân vật:** "..reportSafeText(p.displayName,65).."\n"..
-                    "⏱️ **Chu kỳ:** "..tostring(S.accountReportMinutes).." phút/lần",
-                color=0x9B59D0,
+            if #lines==0 then return "*Chưa thấy trong dữ liệu được phép đọc.*" end
+            if #list>limit then lines[#lines+1]="*… và "..(#list-limit).." mục khác*" end
+            return table.concat(lines,"\n")
+        end
+        -- Limit work done by a damaged external data source. Report a partial
+        -- account snapshot if full inventory parsing fails; never fake items.
+        local snapshotWasPartial=false
+        local snapFailure=""
+        local snapOk,snap=pcall(reportMakeSnapshot)
+        if not snapOk or type(snap)~="table" then
+            snapshotWasPartial=true
+            snapFailure="Bộ đọc kho lỗi (đã bỏ qua)."
+            warn("[TC ACC V4.13.4 INVENTORY]",safeText(snap,180))
+            snap={profile={},groups={},statuses={}}
+        end
+        if type(snap.profile)~="table" then snap.profile={}; snapshotWasPartial=true end
+        if type(snap.groups)~="table" then snap.groups={}; snapshotWasPartial=true end
+        if type(snap.statuses)~="table" then snap.statuses={}; snapshotWasPartial=true end
+
+        local p=snap.profile
+        p.name=p.name or tryValue(function() return LocalPlayer.Name end,"Unknown")
+        p.displayName=p.displayName or tryValue(function() return LocalPlayer.DisplayName end,p.name)
+        p.userId=p.userId or tryValue(function() return LocalPlayer.UserId end,0)
+        p.level=p.level or tryValue(function() return reportFind({"Level","Lv"}) end,nil)
+        p.beli=p.beli or tryValue(function() return reportFind({"Beli","Money","Cash"}) end,nil)
+        p.fragments=p.fragments or tryValue(function() return reportFind({"Fragments","Fragment"}) end,nil)
+        p.race=p.race or tryValue(function() return reportFind({"Race","race"}) end,"Chưa đọc được")
+        p.fruit=p.fruit or tryValue(function() return reportFind({"DevilFruit","BloxFruit","Fruit"}) end,"Chưa đọc được")
+        p.sea=p.sea or tryValue(seaName,"Chưa đọc được")
+        local melee=type(snap.groups["VÕ"])=="table" and snap.groups["VÕ"] or {}
+        local fruits=type(snap.groups["TRÁI TRONG KHO"])=="table" and snap.groups["TRÁI TRONG KHO"] or {}
+        local held=type(snap.groups["TRÁI ĐANG CẦM"])=="table" and snap.groups["TRÁI ĐANG CẦM"] or {}
+        local fruitStatus=safeText(snap.statuses.fruits or "Chưa đọc được kho trái",140)
+        local hasFullFruit=not snapshotWasPartial and fruitStatus:find("Đã đọc từ máy chủ",1,true)~=nil
+
+        local embeds={
+            {
+                title="👑 TRUONG CODER • ACC V4.13.4",
+                description="👤 **Tài khoản:** `@"..safeText(p.name,60).."`\n"..
+                    "✨ **Nhân vật:** "..safeText(p.displayName,60).."\n"..
+                    "⏱️ **Tự gửi:** "..safeText(S.accountReportMinutes,5).." phút/lần",
+                color=0x8B5CF6,
                 fields={
-                    {name="⚡ LEVEL",value="**"..reportFmt(p.level).."**",inline=true},
-                    {name="🐉 TỘC",value="**"..reportSafeText(p.race,35).."**",inline=true},
-                    {name="🌊 SEA",value="**"..reportSafeText(p.sea,35).."**",inline=true},
-                    {name="🍈 TRÁI ĐANG DÙNG",value="**"..fruitText.."**",inline=false},
+                    {name="⚡ LEVEL",value=safeNumber(p.level),inline=true},
+                    {name="🐉 TỘC",value=safeText(p.race,60),inline=true},
+                    {name="🌊 SEA",value=safeText(p.sea,50),inline=true},
+                    {name="🍈 TRÁI ĐANG DÙNG",value=safeText(p.fruit,75),inline=false},
                 },
-                footer={text="V4.13.3 • FIX STRING + HIỆN LỖI ĐẦY ĐỦ • KHÔNG CẦN BOT PC"},
-                timestamp=os.date("!%Y-%m-%dT%H:%M:%SZ"),
-            }
-            step="lấy avatar Roblox"
-            local avatar=reportAvatarUrl(p.userId)
-            if type(avatar)=="string" and avatar:match("^https://") then
-                profile.thumbnail={url=avatar}
+                footer={text="V4.13.4 • BÁO CÁO AN TOÀN • KHÔNG CẦN BOT PC"},
+            },
+            {title="🟢 BELI • TIỀN",description="**"..safeNumber(p.beli).." Beli**",color=0x22C55E},
+            {title="🟣 FRAGMENTS • F",description="**"..safeNumber(p.fragments).." F**",color=0xA855F7},
+            {title="🥊 MELEE • VÕ ("..#melee..")",description=safeList(melee,13),color=0xD946EF},
+            {
+                title="🍇 KHO TRÁI • ĐÃ NHẬN DIỆN "..#fruits,
+                description=(hasFullFruit and "✅ Đọc được từ máy chủ" or "⚠️ Chưa xác minh toàn bộ kho")..
+                    "\n"..safeList(fruits,10).."\n*"..fruitStatus.."*"..
+                    ((#held>0) and ("\n🎒 **Đang cầm:** "..safeList(held,3)) or "")..
+                    (snapshotWasPartial and ("\n⚠️ "..snapFailure) or ""),
+                color=hasFullFruit and 0x14B8A6 or 0xF59E0B,
+            },
+        }
+        -- Art is optional and never allowed to block the primary account report.
+        if S.accountReportImages then
+            local shown={}
+            local pool={p.fruit}
+            for _,item in ipairs(fruits) do
+                if #pool>=5 then break end
+                if type(item)=="table" then pool[#pool+1]=item.name end
             end
-            embeds[#embeds+1]=profile
-            -- Card 2: distinct GREEN Beli border.
-            embeds[#embeds+1]={title="🟢 BELI • TIỀN GAME",
-                description="# "..reportFmt(p.beli).." Beli",color=0x22C55E}
-            -- Card 3: distinct PURPLE Fragment border.
-            embeds[#embeds+1]={title="🟣 FRAGMENTS • F",
-                description="# "..reportFmt(p.fragments).." F",color=0xA855F7}
-            -- Card 4: ONLY Melee gets a dedicated watch notification elsewhere.
-            embeds[#embeds+1]={title="🥊 VÕ NÂNG CAO ĐÃ ĐỌC ĐƯỢC  ("..#melee..")",
-                description=reportShortList(melee,14,1100),color=0xD946EF}
-            -- Card 5: fruit list, with honest partial/failed status.
-            local fruitNote=fullFruit and "✅ Đọc từ máy chủ" or "⚠️ KHO CHƯA ĐỌC ĐẦY ĐỦ"
-            local fruitList=(#fruits>0) and reportShortList(fruits,13,850)
-                or "*Chưa nhận được danh sách trái trong kho. Không có nghĩa là kho trống.*"
-            embeds[#embeds+1]={
-                title="🍇 TRÁI TRONG KHO  (nhận diện: "..#fruits..")",
-                description="**"..fruitNote.."**\n"..fruitList..
-                    "\n\n*"..reportSafeText(fruitStatus,160).."*"..
-                    (#held>0 and ("\n🎒 **Đang cầm:** "..reportShortList(held,3,190)) or ""),
-                color=fullFruit and 0x14B8A6 or 0xF59E0B,
-            }
-            -- Card 6: compact status list: NOT a pick-up announcement.
-            embeds[#embeds+1]={title="🎒 TRANG BỊ • VẬT PHẨM QUAN SÁT ĐƯỢC",
-                description=reportBriefItems(snap).."\n\n"..
-                    "*Quyền đọc trang bị: "..reportSafeText(eqStatus,110).."*",
-                color=0x64748B}
-            -- Cards 7-10: REAL fruit art as thumbnails (right side; API limitation).
-            -- Maximum 10 embeds in ONE Discord message; do not send item spam.
-            step="tìm hình trái ác quỷ"
-            if S.accountReportImages then
-                local already={}
-                local pool={}
-                if reportWorthShowing(p.fruit) then
-                    pool[#pool+1]={name=p.fruit,label="TRÁI ĐANG DÙNG"}
-                end
-                for _,group in ipairs({fruits,held}) do
-                    for _,item in ipairs(group) do
-                        pool[#pool+1]={name=item.name,label="TRÁI NHẬN DIỆN"}
-                    end
-                end
-                for _,item in ipairs(pool) do
-                    if #embeds>=10 then break end
-                    local art,display,rarity=reportFruitArt(item.name)
-                    local key=normalize(display or item.name)
-                    if art and art:match("^https://") and not already[key] then
-                        already[key]=true
-                        embeds[#embeds+1]={
-                            title="🍈 "..reportSafeText(display or item.name,65),
-                            description="**"..item.label.."**  •  "..reportSafeText(rarity or "Blox Fruits",35),
-                            thumbnail={url=art},color=0x8B5CF6,
-                        }
-                    end
+            for _,name in ipairs(pool) do
+                if #embeds>=8 then break end
+                local ok,art,display,rarity=pcall(reportFruitArt,name)
+                local key=safeText(display or name,60)
+                if ok and type(art)=="string" and art:match("^https://") and not shown[key] then
+                    shown[key]=true
+                    embeds[#embeds+1]={
+                        title="🍈 "..key,
+                        description=safeText(rarity or "Blox Fruits",40),
+                        thumbnail={url=art},color=0xA78BFA,
+                    }
                 end
             end
-            step="mã hóa JSON và gửi webhook Discord"
-            local payload={username="TRUONG CODER | ACC REPORT",
-                allowed_mentions={parse={}},embeds=embeds}
-            local success,reason=reportPost(payload)
-            if success then
-                lastAccountReportAt.success=os.clock()
-                status("✅ Discord đã nhận báo cáo V4.13.3 • lần tiếp theo sau "..tostring(S.accountReportMinutes).." phút",true)
-            else
-                status("❌ GỬI THẤT BẠI: "..tostring(reason):sub(1,125),false)
-                warn("[TC V4.13.2 AUTO REPORT] ",reason)
-                -- Auto mode retries after >=120 seconds, never every 5 seconds.
+        end
+        local payload={
+            username="TRUONG CODER | ACC STATUS",
+            allowed_mentions={parse={}},
+            embeds=embeds,
+        }
+        local sent,success,reason=pcall(reportPost,payload)
+        if sent and success then
+            lastAccountReportAt.success=os.clock()
+            lastAccountReportAt.failures=0
+            status("✅ ACC V4.13.4 đã gửi Discord • chu kỳ "..safeText(S.accountReportMinutes,5).." phút",true)
+        else
+            lastAccountReportAt.failures=(lastAccountReportAt.failures or 0)+1
+            local why=sent and reason or success
+            why=safeText(why,130)
+            warn("[TC ACC V4.13.4 DISCORD]",why)
+            status("❌ ACC chưa gửi được: "..why,false)
+            if S.autoAccountReport and lastAccountReportAt.failures>=2 then
+                S.autoAccountReport=false
+                pcall(saveConfig,false)
+                status("⛔ Đã tắt tự gửi ACC sau 2 lần lỗi. Game vẫn hoạt động.",false)
             end
-        end,function(cause)
-            -- Keep the full error and stage in F9. Never print webhook URLs.
-            local clean=tostring(cause)
-                :gsub("https://discord%.com/api/webhooks/%d+/[%w_%-]+","[WEBHOOK_DA_AN]")
-                :gsub("https://discordapp%.com/api/webhooks/%d+/[%w_%-]+","[WEBHOOK_DA_AN]")
-            local trace=clean
-            if type(debug)=="table" and type(debug.traceback)=="function" then
-                local traceOk,details=pcall(debug.traceback,clean,2)
-                if traceOk and details then trace=tostring(details) end
-            end
-            return "BUOC ["..step.."] "..trace
-        end)
-        if not ok then
-            local brief=tostring(err):match("^[^\n]+") or tostring(err)
-            status("❌ ACC V4.13.3 "..brief:sub(1,170),false)
-            notice("ACC LỖI – V4.13.3",brief:sub(1,185))
-            warn("[TC V4.13.3 REPORT ERROR - COPY F9] ",err)
         end
         reportBusy=false
     end)
@@ -11305,8 +11326,8 @@ end))
 
 -- ===================== TRUONG CODER V4.9 ACCOUNT REPORT UI =====================
 local accPage=pages.ACC
-addLabel(accPage,"👑 ACC V4.13.3 • FIX LỖI STRING • GITHUB ONLY",31,15,T.cyan)
-addLabel(accPage,"Bản V4.13: chỉ cần GitHub + webhook. Báo cáo kiểu RealKid với nhiều khung màu, ảnh trái nhỏ ở góc phải nếu có nguồn; KHÔNG cần PC bot.",85,11,T.muted)
+addLabel(accPage,"👑 ACC V4.13.4 • FIX BÁO CÁO KHÔNG CRASH",31,15,T.cyan)
+addLabel(accPage,"V4.13.4: giữ nguyên tính năng game, báo cáo ACC dự phòng khi kho lỗi. Beli xanh, F tím, chỉ báo Melee. Không cần PC bot.",85,11,T.muted)
 toggle(accPage,"TỰ ĐỘNG GỬI BÁO CÁO DISCORD", "autoAccountReport")
 toggle(accPage,"KÈM ẢNH TRÁI + VÕ THẬT (NẾU CÓ)", "accountReportImages")
 toggle(accPage,"CHỈ BÁO KHI PHÁT HIỆN VÕ (MELEE)", "autoMeleeDiscord")
@@ -11327,7 +11348,7 @@ on(intervalInput.FocusLost:Connect(function()
     end
     intervalInput.Text=tostring(S.accountReportMinutes)
 end))
-local reportNowButton=addButton(accPage,"📤 GỬI THỬ BÁO CÁO ACC V4.13.3",color(23,127,152))
+local reportNowButton=addButton(accPage,"📤 GỬI THỬ ACC V4.13.4 • BẢN ỔN ĐỊNH",color(23,127,152))
 on(reportNowButton.MouseButton1Click:Connect(function()
     local n=tonumber(intervalInput.Text)
     if n then S.accountReportMinutes=math.clamp(math.floor(n+0.5),5,180) end
