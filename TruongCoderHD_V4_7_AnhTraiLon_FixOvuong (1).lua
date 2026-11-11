@@ -1,5 +1,5 @@
 --[[
- TRUONG CODER HD | V4.15 - GITHUB ONLY ACC CARD PREMIUM
+ TRUONG CODER HD | V4.15.1 • FIX VERSION + MELEE + 1 EMBED - GITHUB ONLY ACC CARD PREMIUM
  Discord island + opt-in account summary + Melee watch (real fruit thumbnails), 4 ESP tags, Speed/Jump, Noclip, NPC Auto Attack & Water Walk.
  Your photo is embedded in this single file as a local GUI logo.
  No Auto Quest/Teleport/Fly/Auto Levi. Attack only targets nearby NPCs.
@@ -10136,6 +10136,9 @@ local reportBusy=false
 local lastAccountReportAt={attempt=0,success=0}
 local sendAccountReport, watchOnlyMelee
 do
+-- V4.15.1: Melee đã nhìn thấy trong phiên được dùng trong báo cáo, không ghi sai là 0.
+local observedMelee = {}
+local reportVisibleMeleeTools
 local REPORT_COLORS = {
     main=0xA78BFA, level=0xFBBF24, beli=0x22C55E,
     fragments=0x38BDF8, melee=0xEF85FE, fruits=0xF59E0B,
@@ -10604,7 +10607,7 @@ end
 -- V4.14: Discord account report is ONE well-spaced embed in ONE webhook message.
 -- Never invent missing inventory or force extra item thumbnails into separate embeds.
 -- Per-field text color isn't supported by Discord; green/purple emoji label balances.
--- TRUONG CODER V4.15: one attractive Discord embed, no PC bot, no spam gallery.
+-- TRUONG CODER V4.15.1: one attractive Discord embed, no PC bot, no spam gallery.
 -- Embed text cannot be colored by field; emerald/violet markers show Beli/Fragments.
 sendAccountReport = function(isManual)
     if reportBusy then
@@ -10690,8 +10693,8 @@ sendAccountReport = function(isManual)
         local function fail(reason)
             lastAccountReportAt.failures = (lastAccountReportAt.failures or 0) + 1
             local why = safe(reason or "Không rõ nguyên nhân", 130)
-            warn("[TC ACC V4.15]", why)
-            status("❌ ACC V4.15 gửi thất bại: " .. why, false)
+            warn("[TC ACC V4.15.1]", why)
+            status("❌ ACC V4.15.1 gửi thất bại: " .. why, false)
             if S.autoAccountReport and lastAccountReportAt.failures >= 2 then
                 S.autoAccountReport = false
                 pcall(saveConfig, false)
@@ -10701,7 +10704,7 @@ sendAccountReport = function(isManual)
         local ok, err = pcall(function()
             local snapshotOK, snap = pcall(reportMakeSnapshot)
             if not snapshotOK or type(snap) ~= "table" then
-                warn("[TC ACC V4.15 SNAPSHOT]", safe(snap, 135))
+                warn("[TC ACC V4.15.1 SNAPSHOT]", safe(snap, 135))
                 snap = {profile={},groups={},statuses={}}
             end
             if type(snap.profile) ~= "table" then snap.profile = {} end
@@ -10738,6 +10741,27 @@ sendAccountReport = function(isManual)
                     end
                 end
             end
+            -- Đọc Melee đang cầm + Melee đã quan sát trong phiên, kể cả sau khi đổi đồ.
+            -- Không coi đó là danh sách tất cả võ đã mở khóa.
+            local visibleOK, visible = pcall(reportVisibleMeleeTools)
+            if visibleOK and type(visible) == "table" then
+                for key, item in pairs(visible) do observedMelee[key] = item end
+            end
+            local meleeKeys = {}
+            for _, item in ipairs(melee) do
+                if type(item) == "table" and type(item.name) == "string" then
+                    meleeKeys[normalize(item.name)] = true
+                end
+            end
+            for key, item in pairs(observedMelee) do
+                if not meleeKeys[key] then
+                    melee[#melee+1] = {name=item.name, mastery=item.mastery}
+                    meleeKeys[key] = true
+                end
+            end
+            table.sort(melee, function(a,b)
+                return tostring(a.name or ""):lower() < tostring(b.name or ""):lower()
+            end)
             local fruits = type(snap.groups["TRÁI TRONG KHO"]) == "table" and snap.groups["TRÁI TRONG KHO"] or {}
             local held = type(snap.groups["TRÁI ĐANG CẦM"]) == "table" and snap.groups["TRÁI ĐANG CẦM"] or {}
             local fruitState = safe(snap.statuses.fruits, 100)
@@ -10757,36 +10781,43 @@ sendAccountReport = function(isManual)
             local race = safe(p.race,38)
             local sea = safe(p.sea,48)
             local currentFruit = safe(p.fruit,50)
-            -- Single richly-formatted embed. No extra TXT, no sword/gun notifications.
-            local desc = table.concat({
-                "**✦ HỒ SƠ NGƯỜI CHƠI**",
-                "👤  **@" .. user .. "**  ·  " .. display,
+            -- V4.15.1: chỉ MỘT embed, MỘT webhook POST. Discord không hỗ trợ tô màu từng chữ.
+            -- Dùng ký hiệu xanh lá/tím; không tạo 5 embed lẻ như bản 4.13.4.
+            local function section(title, body)
+                return "**" .. title .. "**\n" .. body
+            end
+            local profileBlock = table.concat({
+                "### 👤  @" .. user,
+                "*" .. display .. "*",
                 "`⚡ LV " .. lv .. "`  `🐉 " .. race .. "`  `🌊 " .. sea .. "`",
-                "🍈  **Trái đang dùng:** " .. currentFruit,
-                "",
-                "**━━━━━━━━━━━━━━━━━━━━**",
-                "**💰  TÀI SẢN HIỆN TẠI**",
-                "🟢  **BELI**  ›  **" .. money(p.beli) .. "**",
-                "🟣  **FRAGMENTS (F)**  ›  **" .. money(p.fragments) .. " F**",
-                "",
-                "**━━━━━━━━━━━━━━━━━━━━**",
-                "**🥊  VÕ · MELEE**  `" .. tostring(#melee) .. " nhận diện`",
-                linesFrom(melee,9,680),
-                "",
-                "**━━━━━━━━━━━━━━━━━━━━**",
-                "**🍇  KHO TRÁI ÁC QUỶ**",
-                fruitBlock .. heldBlock
-            },"\n")
-            -- Keep within Discord embed description limit. Trim lists, not Roblox identity.
-            if #desc > 3750 then
-                desc = desc:sub(1,3400) .. "\n*... còn dữ liệu chưa hiển thị*"
+                "🍈 **Trái sử dụng:** " .. currentFruit
+            }, "\n")
+            local bankBlock = table.concat({
+                "🟢 **BELI**   **" .. money(p.beli) .. "**",
+                "🟣 **FRAGMENTS**   **" .. money(p.fragments) .. " F**"
+            }, "\n")
+            local meleeBlock = linesFrom(melee, 7, 540)
+            if #melee==0 then meleeBlock = "*Chưa thấy võ trong phiên này*" end
+            local desc = table.concat({
+                profileBlock,
+                "━━━━━━━━━━━━━━━━━━",
+                section("💰  TÀI SẢN", bankBlock),
+                "━━━━━━━━━━━━━━━━━━",
+                section("🥊  VÕ (đang có / đã thấy trong phiên)", meleeBlock),
+                "━━━━━━━━━━━━━━━━━━",
+                section("🍇  KHO TRÁI", fruitBlock .. heldBlock)
+            }, "\n")
+            -- Chừa biên an toàn so với giới hạn embed Discord.
+            if #desc > 2800 then
+                desc=desc:sub(1,2650).."\n*Danh sách đã được rút gọn.*"
             end
             local embed = {
-                author={name="TRUONG CODER  ✦  BLOX FRUITS"},
-                title="👑  HỒ SƠ TÀI KHOẢN  |  V4.15",
-                description=desc,
-                color=0x8B5CF6,
-                footer={text="✦ TRUONG CODER HD  •  Cập nhật "..tostring(math.floor(tonumber(S.accountReportMinutes) or 30)).." phút/lần  •  "..os.date("%d/%m/%Y %H:%M")},
+                author = {name = "✦  TRUONG CODER • BLOX FRUITS"},
+                title = "👑  ACCOUNT REPORT   •   V4.15.1",
+                description = desc,
+                color = 0x7C3AED,
+                footer = {text = "TRUONG CODER HD V4.15.1  •  Chu kỳ "..tostring(math.floor(tonumber(S.accountReportMinutes) or 30)).." phút"},
+                timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
             }
             if S.accountReportImages then
                 local picture
@@ -10808,7 +10839,7 @@ sendAccountReport = function(isManual)
             if postedOK and sent then
                 lastAccountReportAt.success = os.clock()
                 lastAccountReportAt.failures = 0
-                status("✅ ACC V4.15 đã gửi một thẻ Discord mới!", true)
+                status("✅ ACC V4.15.1 đã gửi một thẻ Discord mới!", true)
             else
                 fail(postedOK and reason or sent)
             end
@@ -10823,7 +10854,7 @@ end
 local seenMelee={}
 local meleeWatchReady=false
 local lastMeleeAlertAt=0
-local function reportVisibleMeleeTools()
+reportVisibleMeleeTools = function()
     local found={}
     local containers={}
     local backpack=LocalPlayer:FindFirstChildOfClass("Backpack")
@@ -10854,7 +10885,7 @@ local function sendMeleeNotice(item)
         "*Võ vừa được phát hiện trong balô/nhân vật; không khẳng định vừa mở khóa.*"
     local embed={title="🥊 MELEE PHÁT HIỆN  |  "..item.name,
         description=description,color=REPORT_COLORS.melee,
-        footer={text="TRUONG CODER V4.15 • CHỈ BÁO VÕ"},
+        footer={text="TRUONG CODER V4.15.1 • CHỈ BÁO VÕ"},
         timestamp=os.date("!%Y-%m-%dT%H:%M:%SZ")}
     if item.image then
         local img=reportAssetUrl(item.image)
@@ -10868,6 +10899,7 @@ watchOnlyMelee = function()
     while running do
         if S.autoMeleeDiscord and validWebhook(S.webhook) and discordRequest() then
             local visible=reportVisibleMeleeTools()
+            for key,item in pairs(visible) do observedMelee[key]=item end
             if not meleeWatchReady then
                 for key in pairs(visible) do seenMelee[key]=true end
                 meleeWatchReady=true
@@ -10973,7 +11005,7 @@ avatar.Position=UDim2.fromOffset(13,11)
 local title=label(header,"TRUONG CODER",20,T.cyan)
 title.Position=UDim2.fromOffset(78,11)
 title.Size=UDim2.fromOffset(356,29)
-local subtitle=label(header,"SEA WATCH  •  ACCOUNT REPORT  •  V4.15",11,T.muted)
+local subtitle=label(header,"SEA WATCH  •  ACCOUNT REPORT  •  V4.15.1",11,T.muted)
 subtitle.Position=UDim2.fromOffset(79,39)
 subtitle.Size=UDim2.fromOffset(356,20)
 local collapse=button(header,"−",T.surface3)
@@ -11379,8 +11411,8 @@ end))
 
 -- ===================== TRUONG CODER V4.9 ACCOUNT REPORT UI =====================
 local accPage=pages.ACC
-addLabel(accPage,"👑 ACC V4.15 • HỒ SƠ CAO CẤP",31,15,T.cyan)
-addLabel(accPage,"V4.15: một thẻ Discord tím đậm, Beli xanh, F tím, Melee và kho trái gọn. Chỉ dùng GitHub + webhook.",85,11,T.muted)
+addLabel(accPage,"👑 ACC V4.15.1 • HỒ SƠ CAO CẤP",31,15,T.cyan)
+addLabel(accPage,"V4.15.1: một thẻ Discord tím đậm, Beli xanh, F tím, Melee và kho trái gọn. Chỉ dùng GitHub + webhook.",85,11,T.muted)
 toggle(accPage,"TỰ ĐỘNG GỬI BÁO CÁO DISCORD", "autoAccountReport")
 toggle(accPage,"KÈM ẢNH TRÁI + VÕ THẬT (NẾU CÓ)", "accountReportImages")
 toggle(accPage,"CHỈ BÁO KHI PHÁT HIỆN VÕ (MELEE)", "autoMeleeDiscord")
@@ -11401,7 +11433,7 @@ on(intervalInput.FocusLost:Connect(function()
     end
     intervalInput.Text=tostring(S.accountReportMinutes)
 end))
-local reportNowButton=addButton(accPage,"📤 GỬI BÁO CÁO ACC V4.15 NGAY",color(23,127,152))
+local reportNowButton=addButton(accPage,"📤 GỬI BÁO CÁO ACC V4.15.1 NGAY",color(23,127,152))
 on(reportNowButton.MouseButton1Click:Connect(function()
     local n=tonumber(intervalInput.Text)
     if n then S.accountReportMinutes=math.clamp(math.floor(n+0.5),5,180) end
@@ -11410,7 +11442,7 @@ on(reportNowButton.MouseButton1Click:Connect(function()
     sendAccountReport(true)
 end))
 addLabel(accPage,"🔒 Chỉ gửi khi anh tự bật hoặc nhấn nút. Webhook phải được lưu ở tab WEBHOOK; không bao giờ đưa webhook lên GitHub công khai.",67,11,T.muted)
-addLabel(accPage,"✅ V4.15: 1 tin Discord = 1 thẻ duy nhất. Beli 🟢 / F 🟣, Melee, kho trái, ảnh ở góc nếu có.",75,11,T.mint)
+addLabel(accPage,"✅ V4.15.1: 1 tin Discord = 1 thẻ duy nhất. Beli 🟢 / F 🟣, Melee, kho trái, ảnh ở góc nếu có.",75,11,T.mint)
 addLabel(accPage,"🍇 Nếu kho báo NIL: mở Menu > Items > Treasure trước lúc gửi thử. Dữ liệu UI chỉ là bản xem trước, không bảo đảm toàn bộ kho.",71,11,T.yellow)
 
 -- NPC-only Auto Attack, not player-vs-player. One current target, no teleport.
@@ -12150,7 +12182,7 @@ task.spawn(function()
     loading:Destroy()
     hub.Visible=true
     uiReady=true
-    status(wasLoaded and "DA TAI CAI DAT CU + WEBHOOK" or "READY • Bat/tat se tu luu",true)
+    status("TRUONG CODER V4.15.1 ĐÃ NẠP • VÀO ACC ĐỂ TEST",true)
 end)
 
 task.spawn(function()
@@ -12165,4 +12197,5 @@ task.spawn(function()
 end)
 
 tab("ESP")
-print("TRUONG CODER HD V4.15 GITHUB ONLY + PREMIUM REPORT started; saved config loaded:",wasLoaded)
+print("[TC VERSION CHECK] TRUONG CODER HD V4.15.1 | 1 EMBED | MELEE FIX | GITHUB ONLY", "saved:", wasLoaded)
+notice("TRUONG CODER V4.15.1", "Đã nạp bản mới. Vào ACC > GỬI BÁO CÁO.")
