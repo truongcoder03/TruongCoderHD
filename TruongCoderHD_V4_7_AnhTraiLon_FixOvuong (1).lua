@@ -1,5 +1,5 @@
 --[[
- TRUONG CODER HD | V4.16 - STORED FRUIT IMAGE ALERT + ACCOUNT CARD PREMIUM
+ TRUONG CODER HD | V4.17 - VIP DISCORD CARD + STORED FRUIT IMAGE ALERT
  Discord island + opt-in account summary + Melee watch + automatic stored-fruit Discord image alerts, 4 ESP tags, Speed/Jump, Noclip, NPC Auto Attack & Water Walk.
  Your photo is embedded in this single file as a local GUI logo.
  No Auto Quest/Teleport/Fly/Auto Levi. Attack only targets nearby NPCs.
@@ -10609,7 +10609,7 @@ end
 -- V4.14: Discord account report is ONE well-spaced embed in ONE webhook message.
 -- Never invent missing inventory or force extra item thumbnails into separate embeds.
 -- Per-field text color isn't supported by Discord; green/purple emoji label balances.
--- TRUONG CODER V4.15: one attractive Discord embed, no PC bot, no spam gallery.
+-- TRUONG CODER V4.17: framed VIP Discord account card + stored-fruit alerts.
 -- Embed text cannot be colored by field; emerald/violet markers show Beli/Fragments.
 sendAccountReport = function(isManual)
     if reportBusy then
@@ -10876,7 +10876,7 @@ local function sendMeleeNotice(item)
         "*Võ vừa được phát hiện trong balô/nhân vật; không khẳng định vừa mở khóa.*"
     local embed={title="🥊 MELEE PHÁT HIỆN  |  "..item.name,
         description=description,color=REPORT_COLORS.melee,
-        footer={text="TRUONG CODER V4.15 • CHỈ BÁO VÕ"},
+        footer={text="TRUONG CODER V4.17 • CHỈ BÁO VÕ"},
         timestamp=os.date("!%Y-%m-%dT%H:%M:%SZ")}
     if item.image then
         local img=reportAssetUrl(item.image)
@@ -10995,7 +10995,7 @@ avatar.Position=UDim2.fromOffset(13,11)
 local title=label(header,"TRUONG CODER",20,T.cyan)
 title.Position=UDim2.fromOffset(78,11)
 title.Size=UDim2.fromOffset(356,29)
-local subtitle=label(header,"SEA WATCH  •  ACCOUNT REPORT  •  V4.15",11,T.muted)
+local subtitle=label(header,"SEA WATCH  •  ACCOUNT REPORT  •  V4.17",11,T.muted)
 subtitle.Position=UDim2.fromOffset(79,39)
 subtitle.Size=UDim2.fromOffset(356,20)
 local collapse=button(header,"−",T.surface3)
@@ -11402,8 +11402,8 @@ end))
 
 -- ===================== TRUONG CODER V4.9 ACCOUNT REPORT UI =====================
 local accPage=pages.ACC
-addLabel(accPage,"👑 ACC V4.15 • HỒ SƠ CAO CẤP",31,15,T.cyan)
-addLabel(accPage,"V4.15: một thẻ Discord tím đậm, Beli xanh, F tím, Melee và kho trái gọn. Chỉ dùng GitHub + webhook.",85,11,T.muted)
+addLabel(accPage,"👑 ACC V4.17 • HỒ SƠ VIP",31,15,T.cyan)
+addLabel(accPage,"V4.17: thẻ Discord có khung riêng, giãn dòng, giữ ảnh nhân vật; Beli xanh, F tím, Melee và kho trái.",85,11,T.muted)
 toggle(accPage,"TỰ ĐỘNG GỬI BÁO CÁO DISCORD", "autoAccountReport")
 toggle(accPage,"KÈM ẢNH TRÁI + VÕ THẬT (NẾU CÓ)", "accountReportImages")
 toggle(accPage,"CHỈ BÁO KHI PHÁT HIỆN VÕ (MELEE)", "autoMeleeDiscord")
@@ -11424,7 +11424,7 @@ on(intervalInput.FocusLost:Connect(function()
     end
     intervalInput.Text=tostring(S.accountReportMinutes)
 end))
-local reportNowButton=addButton(accPage,"📤 GỬI BÁO CÁO ACC V4.15 NGAY",color(23,127,152))
+local reportNowButton=addButton(accPage,"📤 GỬI BÁO CÁO ACC V4.17 NGAY",color(23,127,152))
 on(reportNowButton.MouseButton1Click:Connect(function()
     local n=tonumber(intervalInput.Text)
     if n then S.accountReportMinutes=math.clamp(math.floor(n+0.5),5,180) end
@@ -11433,7 +11433,7 @@ on(reportNowButton.MouseButton1Click:Connect(function()
     sendAccountReport(true)
 end))
 addLabel(accPage,"🔒 Chỉ gửi khi anh tự bật hoặc nhấn nút. Webhook phải được lưu ở tab WEBHOOK; không bao giờ đưa webhook lên GitHub công khai.",67,11,T.muted)
-addLabel(accPage,"✅ V4.15: 1 tin Discord = 1 thẻ duy nhất. Beli 🟢 / F 🟣, Melee, kho trái, ảnh ở góc nếu có.",75,11,T.mint)
+addLabel(accPage,"✅ V4.17: 1 tin Discord = 1 thẻ VIP có khung. Beli 🟢 / F 🟣, Melee, kho trái, ảnh nhân vật.",75,11,T.mint)
 addLabel(accPage,"🍇 Nếu kho báo NIL: mở Menu > Items > Treasure trước lúc gửi thử. Dữ liệu UI chỉ là bản xem trước, không bảo đảm toàn bộ kho.",71,11,T.yellow)
 
 -- NPC-only Auto Attack, not player-vs-player. One current target, no teleport.
@@ -12188,4 +12188,4 @@ task.spawn(function()
 end)
 
 tab("ESP")
-print("TRUONG CODER HD V4.15 GITHUB ONLY + PREMIUM REPORT started; saved config loaded:",wasLoaded)
+print("TRUONG CODER HD V4.17 VIP CARD + STORED FRUIT ALERT started; saved config loaded:",wasLoaded)
