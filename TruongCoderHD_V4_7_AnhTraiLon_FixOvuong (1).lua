@@ -10695,8 +10695,8 @@ sendAccountReport = function(isManual)
         local function fail(reason)
             lastAccountReportAt.failures = (lastAccountReportAt.failures or 0) + 1
             local why = safe(reason or "Không rõ nguyên nhân", 130)
-            warn("[TC ACC V4.15]", why)
-            status("❌ ACC V4.15 gửi thất bại: " .. why, false)
+            warn("[TC ACC V4.17]", why)
+            status("❌ ACC V4.17 gửi thất bại: " .. why, false)
             if S.autoAccountReport and lastAccountReportAt.failures >= 2 then
                 S.autoAccountReport = false
                 pcall(saveConfig, false)
@@ -10706,7 +10706,7 @@ sendAccountReport = function(isManual)
         local ok, err = pcall(function()
             local snapshotOK, snap = pcall(reportMakeSnapshot)
             if not snapshotOK or type(snap) ~= "table" then
-                warn("[TC ACC V4.15 SNAPSHOT]", safe(snap, 135))
+                warn("[TC ACC V4.17 SNAPSHOT]", safe(snap, 135))
                 snap = {profile={},groups={},statuses={}}
             end
             if type(snap.profile) ~= "table" then snap.profile = {} end
@@ -10762,36 +10762,53 @@ sendAccountReport = function(isManual)
             local race = safe(p.race,38)
             local sea = safe(p.sea,48)
             local currentFruit = safe(p.fruit,50)
-            -- Single richly-formatted embed. No extra TXT, no sword/gun notifications.
+            -- V4.17: framed VIP layout, comfortable spacing, same thumbnail/avatar.
+            local function framedSection(titleText, bodyText)
+                local box = {"╭────── ✦ " .. titleText .. " ✦ ──────╮"}
+                for line in tostring(bodyText or ""):gmatch("[^\n]+") do
+                    box[#box+1] = "│  " .. line
+                end
+                box[#box+1] = "╰──────────────────────────────╯"
+                return table.concat(box, "\n")
+            end
+            local profileBlock = table.concat({
+                "👤  **@" .. user .. "**",
+                "✨  **" .. display .. "**",
+                "⚡  `LV " .. lv .. "`     🐉  `" .. race .. "`",
+                "🌊  `" .. sea .. "`",
+                "🍈  **Trái đang dùng:** " .. currentFruit
+            }, "\n")
+            local assetBlock = table.concat({
+                "🟢  **BELI**",
+                "   **" .. money(p.beli) .. "**",
+                "",
+                "🟣  **FRAGMENTS (F)**",
+                "   **" .. money(p.fragments) .. " F**"
+            }, "\n")
+            local meleeBlock = "🥊  **" .. tostring(#melee) .. " võ đã nhận diện**\n\n" .. linesFrom(melee,9,680)
             local desc = table.concat({
-                "**✦ HỒ SƠ NGƯỜI CHƠI**",
-                "👤  **@" .. user .. "**  ·  " .. display,
-                "`⚡ LV " .. lv .. "`  `🐉 " .. race .. "`  `🌊 " .. sea .. "`",
-                "🍈  **Trái đang dùng:** " .. currentFruit,
+                "╔══════════════════════════════╗",
+                "       **✦ TRUONG CODER ✦**",
+                "╚══════════════════════════════╝",
                 "",
-                "**━━━━━━━━━━━━━━━━━━━━**",
-                "**💰  TÀI SẢN HIỆN TẠI**",
-                "🟢  **BELI**  ›  **" .. money(p.beli) .. "**",
-                "🟣  **FRAGMENTS (F)**  ›  **" .. money(p.fragments) .. " F**",
+                framedSection("HỒ SƠ NGƯỜI CHƠI", profileBlock),
                 "",
-                "**━━━━━━━━━━━━━━━━━━━━**",
-                "**🥊  VÕ · MELEE**  `" .. tostring(#melee) .. " nhận diện`",
-                linesFrom(melee,9,680),
+                framedSection("TÀI SẢN HIỆN TẠI", assetBlock),
                 "",
-                "**━━━━━━━━━━━━━━━━━━━━**",
-                "**🍇  KHO TRÁI ÁC QUỶ**",
-                fruitBlock .. heldBlock
+                framedSection("VÕ · MELEE", meleeBlock),
+                "",
+                framedSection("KHO TRÁI ÁC QUỶ", fruitBlock .. heldBlock)
             },"\n")
             -- Keep within Discord embed description limit. Trim lists, not Roblox identity.
             if #desc > 3750 then
                 desc = desc:sub(1,3400) .. "\n*... còn dữ liệu chưa hiển thị*"
             end
             local embed = {
-                author={name="TRUONG CODER  ✦  BLOX FRUITS"},
-                title="👑  HỒ SƠ TÀI KHOẢN  |  V4.15",
+                author={name="╔ ✦ TRUONG CODER · BLOX FRUITS ✦ ╗"},
+                title="👑  ╭ HỒ SƠ TÀI KHOẢN · V4.17 ╮",
                 description=desc,
                 color=0x8B5CF6,
-                footer={text="✦ TRUONG CODER HD  •  Cập nhật "..tostring(math.floor(tonumber(S.accountReportMinutes) or 30)).." phút/lần  •  "..os.date("%d/%m/%Y %H:%M")},
+                footer={text="✦ TRUONG CODER HD V4.17  •  Cập nhật "..tostring(math.floor(tonumber(S.accountReportMinutes) or 30)).." phút/lần  •  "..os.date("%d/%m/%Y %H:%M")},
             }
             if S.accountReportImages then
                 local picture
@@ -10813,7 +10830,7 @@ sendAccountReport = function(isManual)
             if postedOK and sent then
                 lastAccountReportAt.success = os.clock()
                 lastAccountReportAt.failures = 0
-                status("✅ ACC V4.15 đã gửi một thẻ Discord mới!", true)
+                status("✅ ACC V4.17 đã gửi một thẻ Discord mới!", true)
             else
                 fail(postedOK and reason or sent)
             end
