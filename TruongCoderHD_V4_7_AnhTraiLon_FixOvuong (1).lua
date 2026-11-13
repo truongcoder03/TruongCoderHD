@@ -1,6 +1,6 @@
 --[[
- TRUONG CODER HD | V4.16 • ELITE ACCOUNT CARD
- Discord island alerts, account summary, Melee watch, ESP tags, movement tools and NPC Auto Attack.
+ TRUONG CODER HD | V4.16 ELITE PROFILE UI
+ Discord island + opt-in account summary + Melee watch (real fruit thumbnails), 4 ESP tags, Speed/Jump, Noclip, NPC Auto Attack & Water Walk.
  Your photo is embedded in this single file as a local GUI logo.
  No Auto Quest/Teleport/Fly/Auto Levi. Attack only targets nearby NPCs.
  Adjustable speed and jump may be overridden by the game server.
@@ -10136,7 +10136,7 @@ local reportBusy=false
 local lastAccountReportAt={attempt=0,success=0}
 local sendAccountReport, watchOnlyMelee
 do
--- V4.16: Melee đã nhìn thấy trong phiên được dùng trong báo cáo, không ghi sai là 0.
+-- V4.15.1: Melee đã nhìn thấy trong phiên được dùng trong báo cáo, không ghi sai là 0.
 local observedMelee = {}
 local reportVisibleMeleeTools
 local REPORT_COLORS = {
@@ -10510,7 +10510,7 @@ local function reportPost(payload,txtname,txtcontent)
     return false,"HTTP "..code..": "..tostring(res and res.Body or "Không phản hồi"):sub(1,130)
 end
 -- ==============================================================
--- Discord account report • premium single-card layout.
+-- V4.13 GITHUB ONLY • RealKid-like Discord embeds, no PC bot.
 -- All sections are sent with ONE webhook POST in ONE Discord message.
 -- Color means the bar on the LEFT of each embed: Discord cannot color
 -- arbitrary words or position thumbnails to the left of every line.
@@ -10607,7 +10607,7 @@ end
 -- V4.14: Discord account report is ONE well-spaced embed in ONE webhook message.
 -- Never invent missing inventory or force extra item thumbnails into separate embeds.
 -- Per-field text color isn't supported by Discord; green/purple emoji label balances.
--- TRUONG CODER: premium single-card Discord account report.
+-- TRUONG CODER V4.15.1: one attractive Discord embed, no PC bot, no spam gallery.
 -- Embed text cannot be colored by field; emerald/violet markers show Beli/Fragments.
 sendAccountReport = function(isManual)
     if reportBusy then
@@ -10693,8 +10693,8 @@ sendAccountReport = function(isManual)
         local function fail(reason)
             lastAccountReportAt.failures = (lastAccountReportAt.failures or 0) + 1
             local why = safe(reason or "Không rõ nguyên nhân", 130)
-            warn("[TC ACC ELITE]", why)
-            status("❌ ACC ELITE gửi thất bại: " .. why, false)
+            warn("[TC ACC V4.15.1]", why)
+            status("❌ ACC V4.15.1 gửi thất bại: " .. why, false)
             if S.autoAccountReport and lastAccountReportAt.failures >= 2 then
                 S.autoAccountReport = false
                 pcall(saveConfig, false)
@@ -10704,7 +10704,7 @@ sendAccountReport = function(isManual)
         local ok, err = pcall(function()
             local snapshotOK, snap = pcall(reportMakeSnapshot)
             if not snapshotOK or type(snap) ~= "table" then
-                warn("[TC ACC ELITE SNAPSHOT]", safe(snap, 135))
+                warn("[TC ACC V4.15.1 SNAPSHOT]", safe(snap, 135))
                 snap = {profile={},groups={},statuses={}}
             end
             if type(snap.profile) ~= "table" then snap.profile = {} end
@@ -10781,7 +10781,7 @@ sendAccountReport = function(isManual)
             local race = safe(p.race,38)
             local sea = safe(p.sea,48)
             local currentFruit = safe(p.fruit,50)
-            -- V4.16: chỉ MỘT embed, MỘT webhook POST. Discord không hỗ trợ tô màu từng chữ.
+            -- V4.15.1: chỉ MỘT embed, MỘT webhook POST. Discord không hỗ trợ tô màu từng chữ.
             -- Dùng ký hiệu xanh lá/tím; không tạo 5 embed lẻ như bản 4.13.4.
             local function section(title, body)
                 return "**" .. title .. "**\n" .. body
@@ -10812,11 +10812,11 @@ sendAccountReport = function(isManual)
                 desc=desc:sub(1,2650).."\n*Danh sách đã được rút gọn.*"
             end
             local embed = {
-                author = {name = "♛  TRUONG CODER  |  BLOX FRUITS"},
-                title = "✦  ACCOUNT VAULT  •  ELITE PROFILE",
+                author = {name = "✦  TRUONG CODER • BLOX FRUITS"},
+                title = "👑  ACCOUNT REPORT   •   V4.15.1",
                 description = desc,
                 color = 0x7C3AED,
-                footer = {text = "TRUONG CODER  •  ELITE PLAYER PROFILE  •  Cập nhật mỗi "..tostring(math.floor(tonumber(S.accountReportMinutes) or 30)).." phút"},
+                footer = {text = "TRUONG CODER HD V4.15.1  •  Chu kỳ "..tostring(math.floor(tonumber(S.accountReportMinutes) or 30)).." phút"},
                 timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
             }
             if S.accountReportImages then
@@ -10839,7 +10839,7 @@ sendAccountReport = function(isManual)
             if postedOK and sent then
                 lastAccountReportAt.success = os.clock()
                 lastAccountReportAt.failures = 0
-                status("✅ ACC ELITE đã gửi một thẻ Discord mới!", true)
+                status("✅ ACC V4.15.1 đã gửi một thẻ Discord mới!", true)
             else
                 fail(postedOK and reason or sent)
             end
@@ -10885,7 +10885,7 @@ local function sendMeleeNotice(item)
         "*Võ vừa được phát hiện trong balô/nhân vật; không khẳng định vừa mở khóa.*"
     local embed={title="🥊 MELEE PHÁT HIỆN  |  "..item.name,
         description=description,color=REPORT_COLORS.melee,
-        footer={text="TRUONG CODER V4.16 • CHỈ BÁO VÕ"},
+        footer={text="TRUONG CODER V4.15.1 • CHỈ BÁO VÕ"},
         timestamp=os.date("!%Y-%m-%dT%H:%M:%SZ")}
     if item.image then
         local img=reportAssetUrl(item.image)
@@ -10972,7 +10972,7 @@ local progress=corners(create("Frame",progressBG,{
 }),8)
 
 hub=corners(create("Frame",screen,{
-    Size=UDim2.fromOffset(570,434),
+    Size=UDim2.fromOffset(760,560),
     AnchorPoint=Vector2.new(.5,.5),
     Position=UDim2.fromScale(S.hubX,S.hubY),
     BackgroundColor3=T.background,
@@ -10980,59 +10980,58 @@ hub=corners(create("Frame",screen,{
     Active=true,
     Visible=false
 }),16)
-border(hub,T.violet,2.2,0.04)
+local hubStroke=border(hub,T.violet,2.2,0.03)
+create("UIGradient",hubStroke,{Color=ColorSequence.new(T.cyan,T.violet,T.rose)})
 create("UIGradient",hub,{
     Color=ColorSequence.new(T.background,T.surface),
-    Rotation=35
+    Rotation=50
 })
 local scale=create("UIScale",hub,{Scale=1})
 local function rescale()
     local camera=workspace.CurrentCamera
     if camera then
         local v=camera.ViewportSize
-        scale.Scale=math.clamp(math.min((v.X-18)/570,(v.Y-24)/434),0.42,1)
+        scale.Scale=math.clamp(math.min((v.X-18)/760,(v.Y-24)/560),0.42,1)
     end
 end
 rescale()
 
+-- Soft logo watermark behind the complete hub (uses the logo already embedded in this file).
+if logoAsset then
+    create("ImageLabel",hub,{
+        Name="TC_LOGO_WATERMARK", BackgroundTransparency=1, Image=logoAsset,
+        ImageTransparency=0.88, ImageColor3=color(145,190,255),
+        Size=UDim2.fromOffset(360,360), Position=UDim2.new(1,-380,0,145),
+        ScaleType=Enum.ScaleType.Fit, ZIndex=0
+    })
+end
 local header=create("Frame",hub,{
     BackgroundTransparency=1,
-    Size=UDim2.new(1,0,0,74),
+    Size=UDim2.new(1,0,0,68),
     Active=true
 })
 local avatar=iconImage(header,51)
 avatar.Position=UDim2.fromOffset(13,11)
-local title=label(header,"✦ TRUONG CODER  •  ELITE ✦",20,T.cyan)
+local title=label(header,"TRUONG CODER  •  ELITE",22,T.cyan)
 title.Position=UDim2.fromOffset(78,11)
 title.Size=UDim2.fromOffset(356,29)
-local subtitle=label(header,"BLOX FRUITS  •  PREMIUM CONTROL CENTER",11,T.violet)
+local subtitle=label(header,"BLOX FRUITS  •  PREMIUM CONTROL CENTER",12,T.violet)
 subtitle.Position=UDim2.fromOffset(79,39)
 subtitle.Size=UDim2.fromOffset(356,20)
-local headerGlow=create("Frame",header,{
-    Position=UDim2.fromOffset(79,63),
-    Size=UDim2.fromOffset(350,2),
-    BackgroundColor3=T.violet,
-    BorderSizePixel=0
-})
-create("UIGradient",headerGlow,{
-    Color=ColorSequence.new({
-        ColorSequenceKeypoint.new(0,T.cyan),
-        ColorSequenceKeypoint.new(0.52,T.violet),
-        ColorSequenceKeypoint.new(1,T.rose)
-    })
-})
+local headLine=corners(create("Frame",hub,{Position=UDim2.fromOffset(78,70),Size=UDim2.fromOffset(470,3),BackgroundColor3=T.violet,BorderSizePixel=0}),3)
+create("UIGradient",headLine,{Color=ColorSequence.new(T.cyan,T.violet,T.rose)})
 local collapse=button(header,"−",T.surface3)
-collapse.Position=UDim2.fromOffset(474,19)
-collapse.Size=UDim2.fromOffset(36,33)
+collapse.Position=UDim2.fromOffset(665,15)
+collapse.Size=UDim2.fromOffset(40,38)
 collapse.TextSize=19
 local exit=button(header,"×",color(110,37,62))
-exit.Position=UDim2.fromOffset(517,19)
-exit.Size=UDim2.fromOffset(36,33)
+exit.Position=UDim2.fromOffset(711,15)
+exit.Size=UDim2.fromOffset(40,38)
 exit.TextSize=19
 
 local bar=corners(create("Frame",hub,{
-    Position=UDim2.fromOffset(11,77),
-    Size=UDim2.fromOffset(137,313),
+    Position=UDim2.fromOffset(12,166),
+    Size=UDim2.fromOffset(154,374),
     BackgroundColor3=T.surface,
     BorderSizePixel=0
 }),10)
@@ -11041,13 +11040,13 @@ local nav={}
 local toggleSetters={}
 for index,id in ipairs({"ESP","MOVE","FARM","ISLANDS","WEBHOOK","ACC","SETTINGS"}) do
     local b=button(bar,id)
-    b.Size=UDim2.fromOffset(123,36)
-    b.Position=UDim2.fromOffset(7,8+(index-1)*43)
+    b.Size=UDim2.fromOffset(138,42)
+    b.Position=UDim2.fromOffset(8,9+(index-1)*50)
     nav[id]=b
     local page=corners(create("ScrollingFrame",hub,{
         Name=id,
-        Position=UDim2.fromOffset(156,77),
-        Size=UDim2.fromOffset(403,313),
+        Position=UDim2.fromOffset(178,166),
+        Size=UDim2.fromOffset(570,374),
         BackgroundColor3=T.surface,
         BorderSizePixel=0,
         ScrollBarThickness=3,
@@ -11075,6 +11074,67 @@ for index,id in ipairs({"ESP","MOVE","FARM","ISLANDS","WEBHOOK","ACC","SETTINGS"
     end))
     pages[id]=page
 end
+
+do
+-- Player profile strip: live values from the local character/leaderstats.
+local profileCard=corners(create("Frame",hub,{
+    Name="PLAYER_PROFILE_CARD",Position=UDim2.fromOffset(178,82),Size=UDim2.fromOffset(570,72),
+    BackgroundColor3=T.surface,BorderSizePixel=0
+}),12)
+border(profileCard,T.violet,1.4,0.18)
+local profileAvatar=corners(create("ImageLabel",profileCard,{
+    BackgroundColor3=T.surface3,BorderSizePixel=0,Size=UDim2.fromOffset(54,54),Position=UDim2.fromOffset(9,9),
+    Image="",ScaleType=Enum.ScaleType.Crop
+}),10)
+border(profileAvatar,T.cyan,1.5,0.12)
+local profileName=label(profileCard,LocalPlayer.DisplayName.."  •  @"..LocalPlayer.Name,14,T.text)
+profileName.Position=UDim2.fromOffset(72,5); profileName.Size=UDim2.fromOffset(475,22)
+local profileStats=label(profileCard,"LV --   |   BELI --   |   FRAGMENTS -- F",12,T.mint)
+profileStats.Position=UDim2.fromOffset(72,28); profileStats.Size=UDim2.fromOffset(475,18)
+local profileGear=label(profileCard,"MELEE --   •   SWORD --   •   GUN --",10,T.yellow)
+profileGear.Position=UDim2.fromOffset(72,47); profileGear.Size=UDim2.fromOffset(490,18)
+local function findStat(names)
+    local roots={LocalPlayer:FindFirstChild("leaderstats"),LocalPlayer:FindFirstChild("Data")}
+    for _,root in ipairs(roots) do
+        if root then
+            for _,name in ipairs(names) do
+                local v=root:FindFirstChild(name,true)
+                if v then
+                    local ok,val=pcall(function() return v.Value end)
+                    if ok and val~=nil then return tostring(val) end
+                end
+            end
+        end
+    end
+    return "--"
+end
+local function equippedGear()
+    local found={melee="--",sword="--",gun="--"}
+    local char=LocalPlayer.Character
+    if not char then return found end
+    for _,tool in ipairs(char:GetChildren()) do
+        if tool:IsA("Tool") then
+            local n=tool.Name
+            local low=n:lower()
+            if low:find("fighting",1,true) or low:find("combat",1,true) or low:find("karate",1,true) or low:find("claw",1,true) or low:find("godhuman",1,true) or low:find("sharkman",1,true) or low:find("death step",1,true) or low:find("sanguine",1,true) or low:find("superhuman",1,true) or low:find("dragon talon",1,true) or low:find("electro",1,true) or low:find("dark step",1,true) then found.melee=n
+            elseif low:find("gun",1,true) or low:find("rifle",1,true) or low:find("slingshot",1,true) or low:find("bazooka",1,true) then found.gun=n
+            else found.sword=n end
+        end
+    end
+    return found
+end
+local function refreshProfile()
+    profileName.Text=LocalPlayer.DisplayName.."  •  @"..LocalPlayer.Name
+    profileStats.Text="LV "..findStat({"Level","Lv"}).."   |   🟢 BELI "..findStat({"Beli","Money","Cash"}).."   |   🟣 "..findStat({"Fragments","Fragment"}).." F"
+    local g=equippedGear()
+    profileGear.Text="MELEE "..g.melee.."   •   SWORD "..g.sword.."   •   GUN "..g.gun
+end
+ task.spawn(function()
+    local ok,thumb=pcall(function() return Players:GetUserThumbnailAsync(LocalPlayer.UserId,Enum.ThumbnailType.HeadShot,Enum.ThumbnailSize.Size150x150) end)
+    if ok and thumb then profileAvatar.Image=thumb end
+    while running and profileCard.Parent do refreshProfile(); task.wait(3) end
+end)
+end -- private profile UI scope
 
 local function tab(id)
     for key,page in pairs(pages) do
@@ -11265,14 +11325,22 @@ local function toggle(page,message,key)
     local caption=label(row,message,12,T.text)
     caption.Position=UDim2.fromOffset(9,3)
     caption.Size=UDim2.new(1,-97,1,-6)
-    local tap=button(row,S[key] and "BẬT" or "TẮT",S[key] and color(18,131,102) or color(105,52,68))
-    tap.Size=UDim2.fromOffset(78,32)
-    tap.Position=UDim2.new(1,-86,.5,-16)
+    local track=corners(create("TextButton",row,{
+        Size=UDim2.fromOffset(58,30),Position=UDim2.new(1,-69,.5,-15),
+        BackgroundColor3=S[key] and color(16,153,124) or color(67,78,99),
+        BorderSizePixel=0,Text="",AutoButtonColor=false
+    }),15)
+    local knob=corners(create("Frame",track,{
+        Size=UDim2.fromOffset(24,24),Position=S[key] and UDim2.new(1,-27,.5,-12) or UDim2.fromOffset(3,3),
+        BackgroundColor3=color(245,249,255),BorderSizePixel=0
+    }),12)
+    border(track,S[key] and T.mint or T.muted,1,0.25)
     toggleSetters[key]=function()
-        tap.Text=S[key] and "BẬT" or "TẮT"
-        tap.BackgroundColor3=S[key] and color(18,131,102) or color(105,52,68)
+        local enabled=not not S[key]
+        TweenService:Create(track,TweenInfo.new(.16,Enum.EasingStyle.Quad),{BackgroundColor3=enabled and color(16,153,124) or color(67,78,99)}):Play()
+        TweenService:Create(knob,TweenInfo.new(.16,Enum.EasingStyle.Quad),{Position=enabled and UDim2.new(1,-27,.5,-12) or UDim2.fromOffset(3,3)}):Play()
     end
-    on(tap.MouseButton1Click:Connect(function()
+    on(track.MouseButton1Click:Connect(function()
         S[key]=not S[key]
         -- Water walking needs body collision; Noclip and Water Walk cannot both stay active.
         if key == "waterWalk" and S.waterWalk and S.noclip then
@@ -11307,8 +11375,8 @@ local function toggle(page,message,key)
 end
 
 statusLabel=label(hub,"Sẵn sàng • Dang tai du lieu...",10,T.mint)
-statusLabel.Size=UDim2.fromOffset(538,26)
-statusLabel.Position=UDim2.fromOffset(15,400)
+statusLabel.Size=UDim2.fromOffset(720,22)
+statusLabel.Position=UDim2.fromOffset(16,532)
 
 local espPage=pages.ESP
 addLabel(espPage,"✦ ESP 4 DAO SU KIEN",25,17,T.cyan)
@@ -11355,7 +11423,7 @@ addLabel(islandPage,"Luu y: Game streaming co the an dao xa. Radar khong du doan
 
 local hookPage=pages.WEBHOOK
 addLabel(hookPage,"🔔 DISCORD ISLAND WEBHOOK",29,16,T.cyan)
-addLabel(hookPage,"Kết nối webhook để nhận thông báo trực tiếp trong Discord.",38,11,T.muted)
+addLabel(hookPage,"Nhap mot lan va luu tren thiet bi. Khong up file settings len GitHub.",45,11,T.muted)
 local input=corners(create("TextBox",hookPage,{
     Size=UDim2.new(1,0,0,43),
     BackgroundColor3=T.surface2,
@@ -11373,23 +11441,23 @@ create("UIPadding",input,{PaddingLeft=UDim.new(0,9),PaddingRight=UDim.new(0,9)})
 local saveButton=addButton(hookPage,"LUU WEBHOOK",color(22,119,172))
 local clearHook=addButton(hookPage,"XOA WEBHOOK DA LUU",color(117,44,69))
 toggle(hookPage,"TU BAO DISCORD KHI PHAT HIEN DAO", "autoDiscord")
-addLabel(hookPage,"✧ FRUIT VAULT  •  THEO DÕI TRÁI",32,15,T.yellow)
-addLabel(hookPage,"Theo dõi trái mới nhận và thay đổi trong kho trái.",42,11,T.muted)
-
+addLabel(hookPage,"✨ FRUIT WATCH V4.8 • QUAY / CAT TRAI",32,15,T.yellow)
+addLabel(hookPage,"Báo ĐÃ CẤT khi kiểm tra thấy số lượng trái trong kho tăng. Tránh báo nhầm lúc chỉ cầm trái; không tự cất trái.",75,11,T.muted)
+addLabel(hookPage,"Tin nhặt/cất trái tự động đang TẮT; chỉ cảnh báo riêng cho Melee.",55,11,T.muted)
 toggle(hookPage,"BÁO KHI NHẬN TRÁI VÀO BALÔ (TÙY CHỌN)", "autoFoundFruitDiscord")
 toggle(hookPage,"PING @EVERYONE KHI CÓ TRÁI (TÙY CHỌN)", "fruitMentionEveryone")
 local checkFruitWatch = addButton(hookPage,"🔍 KIEM TRA HTTP + WEBHOOK + KHO",color(26,102,141))
 on(checkFruitWatch.MouseButton1Click:Connect(fruitDiagnostics))
-addLabel(hookPage,"Có thể kiểm tra kết nối và gửi thử thông báo bên dưới.",42,11,T.muted)
+addLabel(hookPage,"Quay trai: bao khi Tool trai MOI vao balo. Cat trai: bao khi so luong kho tang. Neu kho khong doc duoc, bam KIEM TRA de xem loi.",79,11,T.muted)
 local testFruitWebhook=addButton(hookPage,"🧪 TEST POSTER ÓNG ÁNH HELLFIRE (GAS)",color(112,56,151))
 on(testFruitWebhook.MouseButton1Click:Connect(function()
     sendFruitDiscord("Hellfire (Gas)",true,false,false)
 end))
 local sendHeldFruit=addButton(hookPage,"🍎 GỬI TRÁI ĐANG CẦM VỀ DISCORD",color(30,124,104))
 on(sendHeldFruit.MouseButton1Click:Connect(reportHeldFruit))
-addLabel(hookPage,"Thông báo trái hiển thị hình ảnh minh họa khi có dữ liệu phù hợp.",42,11,T.muted)
+addLabel(hookPage,"Hellfire: poster neon co anh trai. Trai khac: hien ANH TRAI THAT o muc anh lon, khong con o vuong. Tin TEST khong phai cat that.",59,11,T.muted)
 
-addLabel(hookPage,"✧ XEM THỬ THÔNG BÁO ĐẢO",29,12,T.muted)
+addLabel(hookPage,"TEST POSTER (KHONG PHAI SPAWN THAT):",29,12,T.muted)
 for _,entry in ipairs({
     {"mirage","TEST MIRAGE ISLAND"},
     {"prehistoric","TEST PREHISTORIC"},
@@ -11422,14 +11490,14 @@ on(clearHook.MouseButton1Click:Connect(function()
 end))
 
 
--- ===================== TRUONG CODER ELITE ACCOUNT VAULT UI =====================
+-- ===================== TRUONG CODER V4.9 ACCOUNT REPORT UI =====================
 local accPage=pages.ACC
-addLabel(accPage,"✦ ACCOUNT VAULT  •  ELITE PROFILE",31,16,T.cyan)
-addLabel(accPage,"Hồ sơ nhân vật • Tài sản • Võ thuật • Kho trái",35,11,T.muted)
+addLabel(accPage,"👑 ACC V4.15.1 • HỒ SƠ CAO CẤP",31,15,T.cyan)
+addLabel(accPage,"V4.15.1: một thẻ Discord tím đậm, Beli xanh, F tím, Melee và kho trái gọn. Chỉ dùng GitHub + webhook.",85,11,T.muted)
 toggle(accPage,"TỰ ĐỘNG GỬI BÁO CÁO DISCORD", "autoAccountReport")
 toggle(accPage,"KÈM ẢNH TRÁI + VÕ THẬT (NẾU CÓ)", "accountReportImages")
 toggle(accPage,"CHỈ BÁO KHI PHÁT HIỆN VÕ (MELEE)", "autoMeleeDiscord")
-addLabel(accPage,"⏱  CHU KỲ CẬP NHẬT  (5–180 PHÚT)",30,13,T.yellow)
+addLabel(accPage,"⏱️ SỐ PHÚT GỬI 1 LẦN (5-180):",27,13,T.yellow)
 local intervalInput=corners(create("TextBox",accPage,{
     Size=UDim2.new(1,0,0,42),BackgroundColor3=T.surface2,BorderSizePixel=0,
     Text=tostring(S.accountReportMinutes),PlaceholderText="30",
@@ -11446,7 +11514,7 @@ on(intervalInput.FocusLost:Connect(function()
     end
     intervalInput.Text=tostring(S.accountReportMinutes)
 end))
-local reportNowButton=addButton(accPage,"✦  XUẤT HỒ SƠ DISCORD NGAY  ✦",color(91,55,166))
+local reportNowButton=addButton(accPage,"📤 GỬI BÁO CÁO ACC V4.15.1 NGAY",color(23,127,152))
 on(reportNowButton.MouseButton1Click:Connect(function()
     local n=tonumber(intervalInput.Text)
     if n then S.accountReportMinutes=math.clamp(math.floor(n+0.5),5,180) end
@@ -11454,11 +11522,11 @@ on(reportNowButton.MouseButton1Click:Connect(function()
     saveConfig(false)
     sendAccountReport(true)
 end))
-addLabel(accPage,"Báo cáo chỉ gửi khi bật tự động hoặc nhấn nút xuất hồ sơ.",42,11,T.muted)
-addLabel(accPage,"✧ Một hồ sơ gọn gàng với Beli xanh, Fragments tím và hình ảnh vật phẩm.",48,11,T.mint)
+addLabel(accPage,"🔒 Chỉ gửi khi anh tự bật hoặc nhấn nút. Webhook phải được lưu ở tab WEBHOOK; không bao giờ đưa webhook lên GitHub công khai.",67,11,T.muted)
+addLabel(accPage,"✅ V4.15.1: 1 tin Discord = 1 thẻ duy nhất. Beli 🟢 / F 🟣, Melee, kho trái, ảnh ở góc nếu có.",75,11,T.mint)
+addLabel(accPage,"🍇 Nếu kho báo NIL: mở Menu > Items > Treasure trước lúc gửi thử. Dữ liệu UI chỉ là bản xem trước, không bảo đảm toàn bộ kho.",71,11,T.yellow)
 
-
--- NPC Auto Attack: one current target, no teleport.
+-- NPC-only Auto Attack, not player-vs-player. One current target, no teleport.
 local farmPage = pages.FARM
 addLabel(farmPage, "⚔️ AUTO ATTACK QUAI", 28, 17, T.cyan)
 addLabel(farmPage, "Tu danh quai gan trong workspace.Enemies khi dang dung gan quai. Khong tu bay/tele; sung can duoc game cho phep ban bang lenh kich hoat.", 76, 11, T.muted)
@@ -12195,7 +12263,7 @@ task.spawn(function()
     loading:Destroy()
     hub.Visible=true
     uiReady=true
-    status("TRUONG CODER V4.16 ĐÃ NẠP • VÀO ACC ĐỂ TEST",true)
+    status("TRUONG CODER V4.16 ELITE UI ĐÃ NẠP • PLAYER PROFILE LIVE",true)
 end)
 
 task.spawn(function()
@@ -12210,5 +12278,5 @@ task.spawn(function()
 end)
 
 tab("ESP")
-print("[TC VERSION CHECK] TRUONG CODER HD V4.16 | 1 EMBED | MELEE FIX | ", "saved:", wasLoaded)
-notice("TRUONG CODER V4.16", "Đã nạp bản mới. Vào ACC > GỬI BÁO CÁO.")
+print("[TC VERSION CHECK] TRUONG CODER HD V4.16 ELITE PROFILE UI | LIVE PLAYER CARD", "saved:", wasLoaded)
+notice("TRUONG CODER V4.16 ELITE", "Đã nạp giao diện hồ sơ nhân vật mới.")
