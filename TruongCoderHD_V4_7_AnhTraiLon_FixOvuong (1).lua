@@ -1,6 +1,6 @@
 --[[
- TRUONG CODER HD | V4.17 - VIP DISCORD CARD + STORED FRUIT IMAGE ALERT
- Discord island + opt-in account summary + Melee watch + automatic stored-fruit Discord image alerts, 4 ESP tags, Speed/Jump, Noclip, NPC Auto Attack & Water Walk.
+ TRUONG CODER HD | V4.16 • ELITE ACCOUNT CARD
+ Discord island alerts, account summary, Melee watch, ESP tags, movement tools and NPC Auto Attack.
  Your photo is embedded in this single file as a local GUI logo.
  No Auto Quest/Teleport/Fly/Auto Levi. Attack only targets nearby NPCs.
  Adjustable speed and jump may be overridden by the game server.
@@ -49,9 +49,8 @@ local S = {
     attackRange = 28,
     attackDelayMs = 400,
     autoDiscord = true,
-    autoFruitDiscord = true, -- V4.16: tu dong bao Discord khi so luong trai trong kho tang
-    autoFoundFruitDiscord = false, -- Khong bao khi trai moi vao balo de tranh spam; chi bao luc CAT vao kho
-    fruitWatchMigrated = false, -- V4.16: chuyen cai dat cu sang bat thong bao cat trai mot lan
+    autoFruitDiscord = false, -- V4.12: khong thong bao vat pham rieng, chi Melee
+    autoFoundFruitDiscord = false, -- V4.12: khong thong bao nhat trai
     autoAccountReport = false, -- Chi bat khi chu tai khoan cho phep gui Discord
     accountReportMinutes = 30, -- 5-180 phut
     accountReportImages = true, -- Chi anh trai + vo co anh that, KHONG spam gallery kiem/sung
@@ -172,13 +171,9 @@ local function loadConfig()
 end
 
 local wasLoaded = loadConfig()
--- V4.16: Khoi phuc thong bao CAT TRAI tu V4.6/V4.7.
--- Chi nang cap cai dat cu mot lan; sau do nguoi dung co the tu tat/bat toggle.
-if not S.fruitWatchMigrated then
-    S.autoFruitDiscord = true
-    S.fruitWatchMigrated = true
-end
--- Khong bat thong bao trai moi vao balo; tranh spam nham voi thong bao CAT KHO.
+-- V4.12: Chi canh bao nhat vo Melee. Bao cao ACC co the gui theo chu ky.
+-- Tat canh bao nhat/cat trai cu khi tai cai dat cu, khong xoa chuc nang test thu cong.
+S.autoFruitDiscord = false
 S.autoFoundFruitDiscord = false
 S.autoMeleeDiscord = true
 -- IMPORTANT: Old saved settings from V1 may have every ESP category ON.
@@ -10141,6 +10136,9 @@ local reportBusy=false
 local lastAccountReportAt={attempt=0,success=0}
 local sendAccountReport, watchOnlyMelee
 do
+-- V4.16: Melee đã nhìn thấy trong phiên được dùng trong báo cáo, không ghi sai là 0.
+local observedMelee = {}
+local reportVisibleMeleeTools
 local REPORT_COLORS = {
     main=0xA78BFA, level=0xFBBF24, beli=0x22C55E,
     fragments=0x38BDF8, melee=0xEF85FE, fruits=0xF59E0B,
@@ -10512,7 +10510,7 @@ local function reportPost(payload,txtname,txtcontent)
     return false,"HTTP "..code..": "..tostring(res and res.Body or "Không phản hồi"):sub(1,130)
 end
 -- ==============================================================
--- V4.13 GITHUB ONLY • RealKid-like Discord embeds, no PC bot.
+-- Discord account report • premium single-card layout.
 -- All sections are sent with ONE webhook POST in ONE Discord message.
 -- Color means the bar on the LEFT of each embed: Discord cannot color
 -- arbitrary words or position thumbnails to the left of every line.
@@ -10609,7 +10607,7 @@ end
 -- V4.14: Discord account report is ONE well-spaced embed in ONE webhook message.
 -- Never invent missing inventory or force extra item thumbnails into separate embeds.
 -- Per-field text color isn't supported by Discord; green/purple emoji label balances.
--- TRUONG CODER V4.17: framed VIP Discord account card + stored-fruit alerts.
+-- TRUONG CODER: premium single-card Discord account report.
 -- Embed text cannot be colored by field; emerald/violet markers show Beli/Fragments.
 sendAccountReport = function(isManual)
     if reportBusy then
@@ -10695,8 +10693,8 @@ sendAccountReport = function(isManual)
         local function fail(reason)
             lastAccountReportAt.failures = (lastAccountReportAt.failures or 0) + 1
             local why = safe(reason or "Không rõ nguyên nhân", 130)
-            warn("[TC ACC V4.17]", why)
-            status("❌ ACC V4.17 gửi thất bại: " .. why, false)
+            warn("[TC ACC ELITE]", why)
+            status("❌ ACC ELITE gửi thất bại: " .. why, false)
             if S.autoAccountReport and lastAccountReportAt.failures >= 2 then
                 S.autoAccountReport = false
                 pcall(saveConfig, false)
@@ -10706,7 +10704,7 @@ sendAccountReport = function(isManual)
         local ok, err = pcall(function()
             local snapshotOK, snap = pcall(reportMakeSnapshot)
             if not snapshotOK or type(snap) ~= "table" then
-                warn("[TC ACC V4.17 SNAPSHOT]", safe(snap, 135))
+                warn("[TC ACC ELITE SNAPSHOT]", safe(snap, 135))
                 snap = {profile={},groups={},statuses={}}
             end
             if type(snap.profile) ~= "table" then snap.profile = {} end
@@ -10743,6 +10741,27 @@ sendAccountReport = function(isManual)
                     end
                 end
             end
+            -- Đọc Melee đang cầm + Melee đã quan sát trong phiên, kể cả sau khi đổi đồ.
+            -- Không coi đó là danh sách tất cả võ đã mở khóa.
+            local visibleOK, visible = pcall(reportVisibleMeleeTools)
+            if visibleOK and type(visible) == "table" then
+                for key, item in pairs(visible) do observedMelee[key] = item end
+            end
+            local meleeKeys = {}
+            for _, item in ipairs(melee) do
+                if type(item) == "table" and type(item.name) == "string" then
+                    meleeKeys[normalize(item.name)] = true
+                end
+            end
+            for key, item in pairs(observedMelee) do
+                if not meleeKeys[key] then
+                    melee[#melee+1] = {name=item.name, mastery=item.mastery}
+                    meleeKeys[key] = true
+                end
+            end
+            table.sort(melee, function(a,b)
+                return tostring(a.name or ""):lower() < tostring(b.name or ""):lower()
+            end)
             local fruits = type(snap.groups["TRÁI TRONG KHO"]) == "table" and snap.groups["TRÁI TRONG KHO"] or {}
             local held = type(snap.groups["TRÁI ĐANG CẦM"]) == "table" and snap.groups["TRÁI ĐANG CẦM"] or {}
             local fruitState = safe(snap.statuses.fruits, 100)
@@ -10762,53 +10781,43 @@ sendAccountReport = function(isManual)
             local race = safe(p.race,38)
             local sea = safe(p.sea,48)
             local currentFruit = safe(p.fruit,50)
-            -- V4.17: framed VIP layout, comfortable spacing, same thumbnail/avatar.
-            local function framedSection(titleText, bodyText)
-                local box = {"╭────── ✦ " .. titleText .. " ✦ ──────╮"}
-                for line in tostring(bodyText or ""):gmatch("[^\n]+") do
-                    box[#box+1] = "│  " .. line
-                end
-                box[#box+1] = "╰──────────────────────────────╯"
-                return table.concat(box, "\n")
+            -- V4.16: chỉ MỘT embed, MỘT webhook POST. Discord không hỗ trợ tô màu từng chữ.
+            -- Dùng ký hiệu xanh lá/tím; không tạo 5 embed lẻ như bản 4.13.4.
+            local function section(title, body)
+                return "**" .. title .. "**\n" .. body
             end
             local profileBlock = table.concat({
-                "👤  **@" .. user .. "**",
-                "✨  **" .. display .. "**",
-                "⚡  `LV " .. lv .. "`     🐉  `" .. race .. "`",
-                "🌊  `" .. sea .. "`",
-                "🍈  **Trái đang dùng:** " .. currentFruit
+                "### 👤  @" .. user,
+                "*" .. display .. "*",
+                "`⚡ LV " .. lv .. "`  `🐉 " .. race .. "`  `🌊 " .. sea .. "`",
+                "🍈 **Trái sử dụng:** " .. currentFruit
             }, "\n")
-            local assetBlock = table.concat({
-                "🟢  **BELI**",
-                "   **" .. money(p.beli) .. "**",
-                "",
-                "🟣  **FRAGMENTS (F)**",
-                "   **" .. money(p.fragments) .. " F**"
+            local bankBlock = table.concat({
+                "🟢 **BELI**   **" .. money(p.beli) .. "**",
+                "🟣 **FRAGMENTS**   **" .. money(p.fragments) .. " F**"
             }, "\n")
-            local meleeBlock = "🥊  **" .. tostring(#melee) .. " võ đã nhận diện**\n\n" .. linesFrom(melee,9,680)
+            local meleeBlock = linesFrom(melee, 7, 540)
+            if #melee==0 then meleeBlock = "*Chưa thấy võ trong phiên này*" end
             local desc = table.concat({
-                "╔══════════════════════════════╗",
-                "       **✦ TRUONG CODER ✦**",
-                "╚══════════════════════════════╝",
-                "",
-                framedSection("HỒ SƠ NGƯỜI CHƠI", profileBlock),
-                "",
-                framedSection("TÀI SẢN HIỆN TẠI", assetBlock),
-                "",
-                framedSection("VÕ · MELEE", meleeBlock),
-                "",
-                framedSection("KHO TRÁI ÁC QUỶ", fruitBlock .. heldBlock)
-            },"\n")
-            -- Keep within Discord embed description limit. Trim lists, not Roblox identity.
-            if #desc > 3750 then
-                desc = desc:sub(1,3400) .. "\n*... còn dữ liệu chưa hiển thị*"
+                profileBlock,
+                "━━━━━━━━━━━━━━━━━━",
+                section("💰  TÀI SẢN", bankBlock),
+                "━━━━━━━━━━━━━━━━━━",
+                section("🥊  VÕ (đang có / đã thấy trong phiên)", meleeBlock),
+                "━━━━━━━━━━━━━━━━━━",
+                section("🍇  KHO TRÁI", fruitBlock .. heldBlock)
+            }, "\n")
+            -- Chừa biên an toàn so với giới hạn embed Discord.
+            if #desc > 2800 then
+                desc=desc:sub(1,2650).."\n*Danh sách đã được rút gọn.*"
             end
             local embed = {
-                author={name="╔ ✦ TRUONG CODER · BLOX FRUITS ✦ ╗"},
-                title="👑  ╭ HỒ SƠ TÀI KHOẢN · V4.17 ╮",
-                description=desc,
-                color=0x8B5CF6,
-                footer={text="✦ TRUONG CODER HD V4.17  •  Cập nhật "..tostring(math.floor(tonumber(S.accountReportMinutes) or 30)).." phút/lần  •  "..os.date("%d/%m/%Y %H:%M")},
+                author = {name = "♛  TRUONG CODER  |  BLOX FRUITS"},
+                title = "✦  ACCOUNT VAULT  •  ELITE PROFILE",
+                description = desc,
+                color = 0x7C3AED,
+                footer = {text = "TRUONG CODER  •  ELITE PLAYER PROFILE  •  Cập nhật mỗi "..tostring(math.floor(tonumber(S.accountReportMinutes) or 30)).." phút"},
+                timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
             }
             if S.accountReportImages then
                 local picture
@@ -10830,7 +10839,7 @@ sendAccountReport = function(isManual)
             if postedOK and sent then
                 lastAccountReportAt.success = os.clock()
                 lastAccountReportAt.failures = 0
-                status("✅ ACC V4.17 đã gửi một thẻ Discord mới!", true)
+                status("✅ ACC ELITE đã gửi một thẻ Discord mới!", true)
             else
                 fail(postedOK and reason or sent)
             end
@@ -10845,7 +10854,7 @@ end
 local seenMelee={}
 local meleeWatchReady=false
 local lastMeleeAlertAt=0
-local function reportVisibleMeleeTools()
+reportVisibleMeleeTools = function()
     local found={}
     local containers={}
     local backpack=LocalPlayer:FindFirstChildOfClass("Backpack")
@@ -10876,7 +10885,7 @@ local function sendMeleeNotice(item)
         "*Võ vừa được phát hiện trong balô/nhân vật; không khẳng định vừa mở khóa.*"
     local embed={title="🥊 MELEE PHÁT HIỆN  |  "..item.name,
         description=description,color=REPORT_COLORS.melee,
-        footer={text="TRUONG CODER V4.17 • CHỈ BÁO VÕ"},
+        footer={text="TRUONG CODER V4.16 • CHỈ BÁO VÕ"},
         timestamp=os.date("!%Y-%m-%dT%H:%M:%SZ")}
     if item.image then
         local img=reportAssetUrl(item.image)
@@ -10890,6 +10899,7 @@ watchOnlyMelee = function()
     while running do
         if S.autoMeleeDiscord and validWebhook(S.webhook) and discordRequest() then
             local visible=reportVisibleMeleeTools()
+            for key,item in pairs(visible) do observedMelee[key]=item end
             if not meleeWatchReady then
                 for key in pairs(visible) do seenMelee[key]=true end
                 meleeWatchReady=true
@@ -10970,10 +10980,10 @@ hub=corners(create("Frame",screen,{
     Active=true,
     Visible=false
 }),16)
-border(hub,T.cyan,1.6,0.1)
+border(hub,T.violet,2.2,0.04)
 create("UIGradient",hub,{
     Color=ColorSequence.new(T.background,T.surface),
-    Rotation=50
+    Rotation=35
 })
 local scale=create("UIScale",hub,{Scale=1})
 local function rescale()
@@ -10992,12 +11002,25 @@ local header=create("Frame",hub,{
 })
 local avatar=iconImage(header,51)
 avatar.Position=UDim2.fromOffset(13,11)
-local title=label(header,"TRUONG CODER",20,T.cyan)
+local title=label(header,"✦ TRUONG CODER  •  ELITE ✦",20,T.cyan)
 title.Position=UDim2.fromOffset(78,11)
 title.Size=UDim2.fromOffset(356,29)
-local subtitle=label(header,"SEA WATCH  •  ACCOUNT REPORT  •  V4.17",11,T.muted)
+local subtitle=label(header,"BLOX FRUITS  •  PREMIUM CONTROL CENTER",11,T.violet)
 subtitle.Position=UDim2.fromOffset(79,39)
 subtitle.Size=UDim2.fromOffset(356,20)
+local headerGlow=create("Frame",header,{
+    Position=UDim2.fromOffset(79,63),
+    Size=UDim2.fromOffset(350,2),
+    BackgroundColor3=T.violet,
+    BorderSizePixel=0
+})
+create("UIGradient",headerGlow,{
+    Color=ColorSequence.new({
+        ColorSequenceKeypoint.new(0,T.cyan),
+        ColorSequenceKeypoint.new(0.52,T.violet),
+        ColorSequenceKeypoint.new(1,T.rose)
+    })
+})
 local collapse=button(header,"−",T.surface3)
 collapse.Position=UDim2.fromOffset(474,19)
 collapse.Size=UDim2.fromOffset(36,33)
@@ -11332,7 +11355,7 @@ addLabel(islandPage,"Luu y: Game streaming co the an dao xa. Radar khong du doan
 
 local hookPage=pages.WEBHOOK
 addLabel(hookPage,"🔔 DISCORD ISLAND WEBHOOK",29,16,T.cyan)
-addLabel(hookPage,"Nhap mot lan va luu tren thiet bi. Khong up file settings len GitHub.",45,11,T.muted)
+addLabel(hookPage,"Kết nối webhook để nhận thông báo trực tiếp trong Discord.",38,11,T.muted)
 local input=corners(create("TextBox",hookPage,{
     Size=UDim2.new(1,0,0,43),
     BackgroundColor3=T.surface2,
@@ -11350,24 +11373,23 @@ create("UIPadding",input,{PaddingLeft=UDim.new(0,9),PaddingRight=UDim.new(0,9)})
 local saveButton=addButton(hookPage,"LUU WEBHOOK",color(22,119,172))
 local clearHook=addButton(hookPage,"XOA WEBHOOK DA LUU",color(117,44,69))
 toggle(hookPage,"TU BAO DISCORD KHI PHAT HIEN DAO", "autoDiscord")
-addLabel(hookPage,"✨ FRUIT WATCH V4.16 • TỰ BÁO CẤT TRÁI KÈM ẢNH",32,15,T.yellow)
-addLabel(hookPage,"Tự gửi Discord khi số lượng trái trong kho tăng; kèm tên trái + ảnh trái thật. Không tự cất trái.",75,11,T.muted)
-addLabel(hookPage,"Báo cất trái: BẬT mặc định. Báo trái mới vào balô: TẮT để tránh spam.",55,11,T.muted)
-toggle(hookPage,"🔔 TỰ BÁO DISCORD MỖI KHI CẤT TRÁI (KÈM ẢNH)", "autoFruitDiscord")
-toggle(hookPage,"BÁO KHI NHẬN TRÁI MỚI VÀO BALÔ (TÙY CHỌN)", "autoFoundFruitDiscord")
+addLabel(hookPage,"✧ FRUIT VAULT  •  THEO DÕI TRÁI",32,15,T.yellow)
+addLabel(hookPage,"Theo dõi trái mới nhận và thay đổi trong kho trái.",42,11,T.muted)
+
+toggle(hookPage,"BÁO KHI NHẬN TRÁI VÀO BALÔ (TÙY CHỌN)", "autoFoundFruitDiscord")
 toggle(hookPage,"PING @EVERYONE KHI CÓ TRÁI (TÙY CHỌN)", "fruitMentionEveryone")
 local checkFruitWatch = addButton(hookPage,"🔍 KIEM TRA HTTP + WEBHOOK + KHO",color(26,102,141))
 on(checkFruitWatch.MouseButton1Click:Connect(fruitDiagnostics))
-addLabel(hookPage,"Cất trái: theo dõi số lượng trong kho mỗi 4 giây; chỉ gửi khi số lượng tăng. Nếu kho không đọc được, bấm KIỂM TRA để xem lỗi.",79,11,T.muted)
+addLabel(hookPage,"Có thể kiểm tra kết nối và gửi thử thông báo bên dưới.",42,11,T.muted)
 local testFruitWebhook=addButton(hookPage,"🧪 TEST POSTER ÓNG ÁNH HELLFIRE (GAS)",color(112,56,151))
 on(testFruitWebhook.MouseButton1Click:Connect(function()
     sendFruitDiscord("Hellfire (Gas)",true,false,false)
 end))
 local sendHeldFruit=addButton(hookPage,"🍎 GỬI TRÁI ĐANG CẦM VỀ DISCORD",color(30,124,104))
 on(sendHeldFruit.MouseButton1Click:Connect(reportHeldFruit))
-addLabel(hookPage,"Hellfire: poster neon co anh trai. Trai khac: hien ANH TRAI THAT o muc anh lon, khong con o vuong. Tin TEST khong phai cat that.",59,11,T.muted)
+addLabel(hookPage,"Thông báo trái hiển thị hình ảnh minh họa khi có dữ liệu phù hợp.",42,11,T.muted)
 
-addLabel(hookPage,"TEST POSTER (KHONG PHAI SPAWN THAT):",29,12,T.muted)
+addLabel(hookPage,"✧ XEM THỬ THÔNG BÁO ĐẢO",29,12,T.muted)
 for _,entry in ipairs({
     {"mirage","TEST MIRAGE ISLAND"},
     {"prehistoric","TEST PREHISTORIC"},
@@ -11400,14 +11422,14 @@ on(clearHook.MouseButton1Click:Connect(function()
 end))
 
 
--- ===================== TRUONG CODER V4.9 ACCOUNT REPORT UI =====================
+-- ===================== TRUONG CODER ELITE ACCOUNT VAULT UI =====================
 local accPage=pages.ACC
-addLabel(accPage,"👑 ACC V4.17 • HỒ SƠ VIP",31,15,T.cyan)
-addLabel(accPage,"V4.17: thẻ Discord có khung riêng, giãn dòng, giữ ảnh nhân vật; Beli xanh, F tím, Melee và kho trái.",85,11,T.muted)
+addLabel(accPage,"✦ ACCOUNT VAULT  •  ELITE PROFILE",31,16,T.cyan)
+addLabel(accPage,"Hồ sơ nhân vật • Tài sản • Võ thuật • Kho trái",35,11,T.muted)
 toggle(accPage,"TỰ ĐỘNG GỬI BÁO CÁO DISCORD", "autoAccountReport")
 toggle(accPage,"KÈM ẢNH TRÁI + VÕ THẬT (NẾU CÓ)", "accountReportImages")
 toggle(accPage,"CHỈ BÁO KHI PHÁT HIỆN VÕ (MELEE)", "autoMeleeDiscord")
-addLabel(accPage,"⏱️ SỐ PHÚT GỬI 1 LẦN (5-180):",27,13,T.yellow)
+addLabel(accPage,"⏱  CHU KỲ CẬP NHẬT  (5–180 PHÚT)",30,13,T.yellow)
 local intervalInput=corners(create("TextBox",accPage,{
     Size=UDim2.new(1,0,0,42),BackgroundColor3=T.surface2,BorderSizePixel=0,
     Text=tostring(S.accountReportMinutes),PlaceholderText="30",
@@ -11424,7 +11446,7 @@ on(intervalInput.FocusLost:Connect(function()
     end
     intervalInput.Text=tostring(S.accountReportMinutes)
 end))
-local reportNowButton=addButton(accPage,"📤 GỬI BÁO CÁO ACC V4.17 NGAY",color(23,127,152))
+local reportNowButton=addButton(accPage,"✦  XUẤT HỒ SƠ DISCORD NGAY  ✦",color(91,55,166))
 on(reportNowButton.MouseButton1Click:Connect(function()
     local n=tonumber(intervalInput.Text)
     if n then S.accountReportMinutes=math.clamp(math.floor(n+0.5),5,180) end
@@ -11432,11 +11454,11 @@ on(reportNowButton.MouseButton1Click:Connect(function()
     saveConfig(false)
     sendAccountReport(true)
 end))
-addLabel(accPage,"🔒 Chỉ gửi khi anh tự bật hoặc nhấn nút. Webhook phải được lưu ở tab WEBHOOK; không bao giờ đưa webhook lên GitHub công khai.",67,11,T.muted)
-addLabel(accPage,"✅ V4.17: 1 tin Discord = 1 thẻ VIP có khung. Beli 🟢 / F 🟣, Melee, kho trái, ảnh nhân vật.",75,11,T.mint)
-addLabel(accPage,"🍇 Nếu kho báo NIL: mở Menu > Items > Treasure trước lúc gửi thử. Dữ liệu UI chỉ là bản xem trước, không bảo đảm toàn bộ kho.",71,11,T.yellow)
+addLabel(accPage,"Báo cáo chỉ gửi khi bật tự động hoặc nhấn nút xuất hồ sơ.",42,11,T.muted)
+addLabel(accPage,"✧ Một hồ sơ gọn gàng với Beli xanh, Fragments tím và hình ảnh vật phẩm.",48,11,T.mint)
 
--- NPC-only Auto Attack, not player-vs-player. One current target, no teleport.
+
+-- NPC Auto Attack: one current target, no teleport.
 local farmPage = pages.FARM
 addLabel(farmPage, "⚔️ AUTO ATTACK QUAI", 28, 17, T.cyan)
 addLabel(farmPage, "Tu danh quai gan trong workspace.Enemies khi dang dung gan quai. Khong tu bay/tele; sung can duoc game cho phep ban bang lenh kich hoat.", 76, 11, T.muted)
@@ -12173,7 +12195,7 @@ task.spawn(function()
     loading:Destroy()
     hub.Visible=true
     uiReady=true
-    status(wasLoaded and "DA TAI CAI DAT CU + WEBHOOK" or "READY • Bat/tat se tu luu",true)
+    status("TRUONG CODER V4.16 ĐÃ NẠP • VÀO ACC ĐỂ TEST",true)
 end)
 
 task.spawn(function()
@@ -12188,4 +12210,5 @@ task.spawn(function()
 end)
 
 tab("ESP")
-print("TRUONG CODER HD V4.17 VIP CARD + STORED FRUIT ALERT started; saved config loaded:",wasLoaded)
+print("[TC VERSION CHECK] TRUONG CODER HD V4.16 | 1 EMBED | MELEE FIX | ", "saved:", wasLoaded)
+notice("TRUONG CODER V4.16", "Đã nạp bản mới. Vào ACC > GỬI BÁO CÁO.")
