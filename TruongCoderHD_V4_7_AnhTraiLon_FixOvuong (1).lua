@@ -10972,7 +10972,7 @@ local progress=corners(create("Frame",progressBG,{
 }),8)
 
 hub=corners(create("Frame",screen,{
-    Size=UDim2.fromOffset(760,560),
+    Size=UDim2.fromOffset(760,620),
     AnchorPoint=Vector2.new(.5,.5),
     Position=UDim2.fromScale(S.hubX,S.hubY),
     BackgroundColor3=T.background,
@@ -10991,7 +10991,7 @@ local function rescale()
     local camera=workspace.CurrentCamera
     if camera then
         local v=camera.ViewportSize
-        scale.Scale=math.clamp(math.min((v.X-18)/760,(v.Y-24)/560),0.42,1)
+        scale.Scale=math.clamp(math.min((v.X-18)/760,(v.Y-24)/620),0.42,1)
     end
 end
 rescale()
@@ -11030,8 +11030,8 @@ exit.Size=UDim2.fromOffset(40,38)
 exit.TextSize=19
 
 local bar=corners(create("Frame",hub,{
-    Position=UDim2.fromOffset(12,166),
-    Size=UDim2.fromOffset(154,374),
+    Position=UDim2.fromOffset(12,244),
+    Size=UDim2.fromOffset(154,356),
     BackgroundColor3=T.surface,
     BorderSizePixel=0
 }),10)
@@ -11045,8 +11045,8 @@ for index,id in ipairs({"ESP","MOVE","FARM","ISLANDS","WEBHOOK","ACC","SETTINGS"
     nav[id]=b
     local page=corners(create("ScrollingFrame",hub,{
         Name=id,
-        Position=UDim2.fromOffset(178,166),
-        Size=UDim2.fromOffset(570,374),
+        Position=UDim2.fromOffset(178,244),
+        Size=UDim2.fromOffset(570,356),
         BackgroundColor3=T.surface,
         BorderSizePixel=0,
         ScrollBarThickness=3,
@@ -11076,9 +11076,41 @@ for index,id in ipairs({"ESP","MOVE","FARM","ISLANDS","WEBHOOK","ACC","SETTINGS"
 end
 
 do
+-- Dedicated large logo banner above the live player profile.
+local logoBar=corners(create("Frame",hub,{
+    Name="TRUONG_CODER_LOGO_BAR",Position=UDim2.fromOffset(178,78),Size=UDim2.fromOffset(570,78),
+    BackgroundColor3=T.surface,BorderSizePixel=0,ClipsDescendants=true
+}),12)
+border(logoBar,T.cyan,1.7,0.08)
+create("UIGradient",logoBar,{Color=ColorSequence.new(T.surface,T.surface3),Rotation=0})
+local logoGlow=corners(create("Frame",logoBar,{
+    Position=UDim2.fromOffset(7,7),Size=UDim2.fromOffset(64,64),
+    BackgroundColor3=T.surface3,BorderSizePixel=0
+}),10)
+border(logoGlow,T.violet,1.5,0.08)
+if logoAsset then
+    create("ImageLabel",logoGlow,{
+        Name="LARGE_TC_LOGO",BackgroundTransparency=1,Image=logoAsset,
+        Size=UDim2.fromScale(1,1),ScaleType=Enum.ScaleType.Fit
+    })
+else
+    local fallback=label(logoGlow,"TC",20,T.cyan)
+    fallback.Size=UDim2.fromScale(1,1)
+    fallback.TextXAlignment=Enum.TextXAlignment.Center
+end
+local logoTitle=label(logoBar,"TRUONG CODER",17,T.cyan)
+logoTitle.Position=UDim2.fromOffset(84,15); logoTitle.Size=UDim2.fromOffset(300,24)
+local logoSubtitle=label(logoBar,"OFFICIAL LOGO  •  BLOX FRUITS ELITE HUB",10,T.violet)
+logoSubtitle.Position=UDim2.fromOffset(85,39); logoSubtitle.Size=UDim2.fromOffset(420,17)
+local logoAccent=corners(create("Frame",logoBar,{
+    Position=UDim2.new(1,-7,0,10),Size=UDim2.fromOffset(3,58),
+    BackgroundColor3=T.cyan,BorderSizePixel=0
+}),3)
+create("UIGradient",logoAccent,{Color=ColorSequence.new(T.cyan,T.violet,T.rose),Rotation=90})
+
 -- Player profile strip: live values from the local character/leaderstats.
 local profileCard=corners(create("Frame",hub,{
-    Name="PLAYER_PROFILE_CARD",Position=UDim2.fromOffset(178,82),Size=UDim2.fromOffset(570,72),
+    Name="PLAYER_PROFILE_CARD",Position=UDim2.fromOffset(178,164),Size=UDim2.fromOffset(570,72),
     BackgroundColor3=T.surface,BorderSizePixel=0
 }),12)
 border(profileCard,T.violet,1.4,0.18)
